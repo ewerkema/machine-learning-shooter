@@ -1,8 +1,6 @@
-"""Showcase of flying bullets that can stick to objects in a somewhat
-realistic looking way.
-"""
 import sys
 
+import numpy
 import pygame
 from pygame.locals import *
 from pygame.color import *
@@ -12,19 +10,75 @@ from pymunk.vec2d import Vec2d
 import pymunk.pygame_util
 
 
-def create_bullet():
-    mass = 1
-    moment = pymunk.moment_for_circle(mass, 0, 2)
-    bullet_body = pymunk.Body(mass, moment)
+class Player(pymunk.Body):
 
-    bullet_shape = pymunk.Circle(bullet_body, 2)
-    bullet_shape.friction = .5
-    bullet_shape.collision_type = 1
-    return bullet_body, bullet_shape
+    def __init__(self, radius=15, player_color=(255, 50, 50), speed=3):
+        super().__init__()
+        self.speed = speed
+        self.body_type = pymunk.Body.KINEMATIC
+        self.shape = pymunk.Circle(self, radius)
+        self.shape.sensor = True
+        self.shape.color = player_color
+        self.position = 100, 100
+        self.angle = 0
+
+    def show(self, space):
+        space.add(self.shape)
+
+    def handle_keys(self):
+        keys = pygame.key.get_pressed()
+        if keys[K_UP]:
+            self.forward()
+        elif keys[K_DOWN]:
+            self.backward()
+        if keys[K_LEFT]:
+            self.rotate_left()
+        elif keys[K_RIGHT]:
+            self.rotate_right()
+
+    def forward(self):
+        self.position += Vec2d(numpy.cos(self.angle), numpy.sin(self.angle)) * self.speed
+
+    def backward(self):
+        self.position -= Vec2d(numpy.cos(self.angle), numpy.sin(self.angle)) * self.speed
+
+    def rotate_left(self):
+        self.angle += (self.speed / 100)
+
+    def rotate_right(self):
+        self.angle -= (self.speed / 100)
 
 
-def bullet_hit_handler(arbiter, space, data):
-    return False
+class Bullet(pymunk.Body):
+
+    def __init__(self, space):
+        super().__init__()
+        self.mass = 1
+        self.radius = 2
+        self.power = 1000
+        self.moment = pymunk.moment_for_circle(self.mass, 0, self.radius)
+        self.shape = pymunk.Circle(self, self.radius)
+        self.shape.friction = .5
+        self.shape.collision_type = 1
+        space.add(self.shape)
+
+    def shoot(self, player):
+        self.position = player.position
+        self.angle = player.angle
+        impulse = self.power * Vec2d(1, 0)
+        impulse.rotate(self.angle)
+        self.apply_impulse_at_world_point(impulse, self.position)
+
+    def update(self):
+        drag_constant = 0.0002
+        pointing_direction = Vec2d(1, 0).rotated(self.angle)
+        flight_direction = Vec2d(self.velocity)
+        flight_speed = flight_direction.normalize_return_length()
+        dot = flight_direction.dot(pointing_direction)
+        drag_force_magnitude = (1 - abs(dot)) * flight_speed ** 2 * drag_constant * self.mass
+        bullet_tail_position = Vec2d(-50, 0).rotated(self.angle)
+        self.apply_impulse_at_world_point(drag_force_magnitude * -flight_direction, bullet_tail_position)
+        self.angular_velocity *= 0.5
 
 
 width, height = 690, 600
@@ -49,30 +103,15 @@ def main():
         , pymunk.Segment(space.static_body, (50, 50), (650, 50), 5)
               ]
 
-    b2 = pymunk.Body(body_type=pymunk.Body.KINEMATIC)
-    static.append(pymunk.Circle(b2, 30))
-    b2.position = 300, 400
+    player1 = Player(15)
+    player1.show(space)
+    player2 = Player(20, (255, 255, 50))
+    player2.show(space)
 
     for s in static:
         s.friction = 1.
         s.group = 1
     space.add(static)
-
-    # "Cannon" that can fire bullets
-    player_body = pymunk.Body(body_type=pymunk.Body.KINEMATIC)
-    player_shape = pymunk.Circle(player_body, 25)
-    player_shape.sensor = True
-    player_shape.color = (255, 50, 50)
-    player_body.position = 100, 100
-    space.add(player_shape)
-
-    bullet_body, bullet_shape = create_bullet()
-    space.add(bullet_shape)
-
-    bullets = []
-    handler = space.add_collision_handler(0, 1)
-    handler.data["bullets"] = bullets
-    handler.pre_solve = space.remove(bullet_shape)
 
     while running:
         for event in pygame.event.get():
@@ -82,51 +121,10 @@ def main():
             elif event.type == KEYDOWN and event.key == K_p:
                 pygame.image.save(screen, "bullets.png")
             elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:
-                power = 1000
-                impulse = power * Vec2d(1, 0)
-                impulse.rotate(bullet_body.angle)
+                bullet = Bullet(space)
+                bullet.shoot(player1)
 
-                bullet_body.apply_impulse_at_world_point(impulse, bullet_body.position)
-
-                space.add(bullet_body)
-                bullets.append(bullet_body)
-
-                bullet_body, bullet_shape = create_bullet()
-                space.add(bullet_shape)
-
-        keys = pygame.key.get_pressed()
-
-        speed = 2.5
-        if (keys[K_UP]):
-            player_body.position += Vec2d(0, 1) * speed
-        if (keys[K_DOWN]):
-            player_body.position += Vec2d(0, -1) * speed
-        if (keys[K_LEFT]):
-            player_body.position += Vec2d(-1, 0) * speed
-        if (keys[K_RIGHT]):
-            player_body.position += Vec2d(1, 0) * speed
-
-        mouse_position = pymunk.pygame_util.from_pygame(Vec2d(pygame.mouse.get_pos()), screen)
-        player_body.angle = (mouse_position - player_body.position).angle
-        # move the unfired bullet together with the player
-        bullet_body.position = player_body.position + Vec2d(player_shape.radius + 40, 0).rotated(player_body.angle)
-        bullet_body.angle = player_body.angle
-
-        for bullet in bullets:
-            drag_constant = 0.0002
-
-            pointing_direction = Vec2d(1, 0).rotated(bullet.angle)
-            flight_direction = Vec2d(bullet.velocity)
-            flight_speed = flight_direction.normalize_return_length()
-            dot = flight_direction.dot(pointing_direction)
-            # (1-abs(dot)) can be replaced with (1-dot) to make bullets turn
-            # around even when fired straight up. Might not be as accurate, but
-            # maybe look better.
-            drag_force_magnitude = (1 - abs(dot)) * flight_speed ** 2 * drag_constant * bullet.mass
-            bullet_tail_position = Vec2d(-50, 0).rotated(bullet.angle)
-            bullet.apply_impulse_at_world_point(drag_force_magnitude * -flight_direction, bullet_tail_position)
-
-            bullet.angular_velocity *= 0.5
+        player1.handle_keys()
 
         ### Clear screen
         screen.fill(pygame.color.THECOLORS["black"])
@@ -137,7 +135,7 @@ def main():
 
         # Info and flip screen
         screen.blit(font.render("fps: " + str(clock.get_fps()), 1, THECOLORS["white"]), (0, 0))
-        screen.blit(font.render("Aim with mouse, hold LMB to powerup, release to fire", 1, THECOLORS["darkgrey"]),
+        screen.blit(font.render("Aim with mouse, press to shoot the bullet", 1, THECOLORS["darkgrey"]),
                     (5, height - 35))
         screen.blit(font.render("Press ESC or Q to quit", 1, THECOLORS["darkgrey"]), (5, height - 20))
 
