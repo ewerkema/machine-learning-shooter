@@ -51,8 +51,8 @@ class Player(pymunk.Body):
 
 class Bullet(pymunk.Body):
 
-    def __init__(self, space):
-        super().__init__()
+    def __init__(self, space, *args, **kwargs):
+        super(Bullet, self).__init__(*args, **kwargs)
         self.mass = 1
         self.radius = 2
         self.power = 1000
@@ -60,23 +60,26 @@ class Bullet(pymunk.Body):
         self.shape = pymunk.Circle(self, self.radius)
         self.shape.friction = .5
         self.shape.collision_type = 1
+
         space.add(self.shape)
+        space.add(self)
 
     def shoot(self, player):
-        self.position = player.position
+        self.position = player.position + Vec2d(player.shape.radius + 40, 0).rotated(player.angle)
         self.angle = player.angle
         impulse = self.power * Vec2d(1, 0)
         impulse.rotate(self.angle)
-        self.apply_impulse_at_world_point(impulse, self.position)
+        self.apply_impulse_at_world_point(impulse, player.position)
 
     def update(self):
         drag_constant = 0.0002
         pointing_direction = Vec2d(1, 0).rotated(self.angle)
-        flight_direction = Vec2d(self.velocity)
+        flight_direction = Vec2d(1, 1)
         flight_speed = flight_direction.normalize_return_length()
         dot = flight_direction.dot(pointing_direction)
         drag_force_magnitude = (1 - abs(dot)) * flight_speed ** 2 * drag_constant * self.mass
         bullet_tail_position = Vec2d(-50, 0).rotated(self.angle)
+        print(drag_force_magnitude)
         self.apply_impulse_at_world_point(drag_force_magnitude * -flight_direction, bullet_tail_position)
         self.angular_velocity *= 0.5
 
