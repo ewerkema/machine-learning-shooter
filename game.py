@@ -167,6 +167,13 @@ class Game(object):
         h = self.space.add_collision_handler(collision_types["bullet"], collision_types["wall"])
         h.pre_solve = remove_bullet
 
+        def add_point(arbiter, space, data):
+            self.score += 1
+            return remove_bullet(arbiter, space, data)
+
+        g = self.space.add_collision_handler(collision_types["bullet"], collision_types["player"])
+        g.pre_solve = add_point
+
     def run_logic(self):
         """
         This method is run each time through the frame. It
@@ -189,9 +196,12 @@ class Game(object):
                                     event.type == KEYDOWN and (event.key in [K_ESCAPE, K_q]):
                 return False
             elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:
-                bullet = Bullet(self.space)
-                bullet.shoot(self.player1)
-                self.bullets.append(bullet.shape)
+                if not self.game_over:
+                    bullet = Bullet(self.space)
+                    bullet.shoot(self.player1)
+                    self.bullets.append(bullet.shape)
+                else:
+                    self.__init__()
 
         return True
 
@@ -202,7 +212,7 @@ class Game(object):
         draw_options = pymunk.pygame_util.DrawOptions(screen)
 
         if self.game_over:
-            text = font.render("Game Over, click to restart", True, THECOLORS["black"])
+            text = font.render("Game Over, click to restart", True, THECOLORS["red"])
             center_x = (SCREEN_WIDTH // 2) - (text.get_width() // 2)
             center_y = (SCREEN_HEIGHT // 2) - (text.get_height() // 2)
             screen.blit(text, [center_x, center_y])
@@ -212,11 +222,12 @@ class Game(object):
             self.space.debug_draw(draw_options)
 
             # Info and flip screen
+            screen.blit(font.render("Score: " + str(self.score), 1, THECOLORS["white"]), (0, 0))
             screen.blit(font.render("Aim with mouse, press to shoot the bullet", 1, THECOLORS["darkgrey"]),
                         (5, SCREEN_HEIGHT - 35))
             screen.blit(font.render("Press ESC or Q to quit", 1, THECOLORS["darkgrey"]), (5, SCREEN_HEIGHT - 20))
 
-            pygame.display.flip()
+        pygame.display.flip()
 
     def update_physics(self, fps):
         dt = 1. / fps
