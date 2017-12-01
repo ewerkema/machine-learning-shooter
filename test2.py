@@ -4,26 +4,45 @@ import numpy
 import pygame
 from pygame.locals import *
 from pygame.color import *
+import random
 
 import pymunk
 from pymunk.vec2d import Vec2d
 import pymunk.pygame_util
 
+width, height = 1000, 800
+wall_offset = 60
+wall_width = 20
+collision_types = {
+    "player": 1,
+    "bullet": 2,
+    "wall": 3,
+}
+
 
 class Player(pymunk.Body):
 
-    def __init__(self, radius=15, player_color=(255, 50, 50), speed=3):
+    def __init__(self, space, radius=15, player_color="red", speed=3):
         super().__init__()
+        self.offset = {
+            "xmin": wall_offset + wall_width + radius,
+            "xmax": width - wall_offset - wall_width - radius,
+            "ymin": wall_offset + wall_width + radius,
+            "ymax": height - wall_offset - wall_width - radius
+        }
         self.speed = speed
         self.body_type = pymunk.Body.KINEMATIC
-        self.shape = pymunk.Circle(self, radius)
-        self.shape.sensor = True
-        self.shape.color = player_color
-        self.position = 100, 100
+        offset = wall_width + wall_offset
+        self.position = (offset + random.randint(0, width - 2 * offset), offset + random.randint(0, height - 2 * offset))
         self.angle = 0
 
-    def show(self, space):
-        space.add(self.shape)
+        self.shape = pymunk.Circle(self, radius)
+        self.shape.color = THECOLORS[player_color]
+        self.shape.sensor = True
+        self.shape.elasticity = 1.0
+        self.shape.collision_type = collision_types["player"]
+
+        space.add(self, self.shape)
 
     def handle_keys(self):
         keys = pygame.key.get_pressed()
@@ -36,17 +55,34 @@ class Player(pymunk.Body):
         elif keys[K_RIGHT]:
             self.rotate_right()
 
+    def handle_keys2(self):
+        keys = pygame.key.get_pressed()
+        if keys[K_w]:
+            self.forward()
+        elif keys[K_s]:
+            self.backward()
+        if keys[K_a]:
+            self.rotate_left()
+        elif keys[K_d]:
+            self.rotate_right()
+
     def forward(self):
-        self.position += Vec2d(numpy.cos(self.angle), numpy.sin(self.angle)) * self.speed
+        self.position = (
+            max(self.offset["xmin"], min(self.offset["xmax"], self.position.x + numpy.cos(self.angle) * self.speed)),
+            max(self.offset["ymin"], min(self.offset["ymax"], self.position.y + numpy.sin(self.angle) * self.speed))
+        )
 
     def backward(self):
-        self.position -= Vec2d(numpy.cos(self.angle), numpy.sin(self.angle)) * self.speed
+        self.position = (
+            max(self.offset["xmin"], min(self.offset["xmax"], self.position.x - numpy.cos(self.angle) * self.speed)),
+            max(self.offset["ymin"], min(self.offset["ymax"], self.position.y - numpy.sin(self.angle) * self.speed))
+        )
 
     def rotate_left(self):
-        self.angle += (self.speed / 100)
+        self.angle += (self.speed * 2 / 100)
 
     def rotate_right(self):
-        self.angle -= (self.speed / 100)
+        self.angle -= (self.speed * 2 / 100)
 
 
 class Bullet(pymunk.Body):
@@ -59,13 +95,12 @@ class Bullet(pymunk.Body):
         self.moment = pymunk.moment_for_circle(self.mass, 0, self.radius)
         self.shape = pymunk.Circle(self, self.radius)
         self.shape.friction = .5
-        self.shape.collision_type = 1
+        self.shape.collision_type = collision_types["bullet"]
 
-        space.add(self.shape)
-        space.add(self)
+        space.add(self, self.shape)
 
     def shoot(self, player):
-        self.position = player.position + Vec2d(player.shape.radius + 40, 0).rotated(player.angle)
+        self.position = player.position + Vec2d(player.shape.radius, 0).rotated(player.angle)
         self.angle = player.angle
         impulse = self.power * Vec2d(1, 0)
         impulse.rotate(self.angle)
@@ -84,9 +119,6 @@ class Bullet(pymunk.Body):
         self.angular_velocity *= 0.5
 
 
-width, height = 690, 600
-
-
 def main():
     ### PyGame init
     pygame.init()
@@ -100,21 +132,35 @@ def main():
     draw_options = pymunk.pygame_util.DrawOptions(screen)
 
     # walls - the left-top-right walls
-    static = [pymunk.Segment(space.static_body, (50, 50), (50, 550), 5)
-        , pymunk.Segment(space.static_body, (50, 550), (650, 550), 5)
-        , pymunk.Segment(space.static_body, (650, 550), (650, 50), 5)
-        , pymunk.Segment(space.static_body, (50, 50), (650, 50), 5)
+    static = [pymunk.Segment(space.static_body, (wall_offset, wall_offset), (wall_offset, height - wall_offset), wall_width)
+        , pymunk.Segment(space.static_body, (wall_offset, height - wall_offset), (width - wall_offset, height - wall_offset), wall_width)
+        , pymunk.Segment(space.static_body, (width - wall_offset, height - wall_offset), (width - wall_offset, wall_offset), wall_width)
+        , pymunk.Segment(space.static_body, (wall_offset, wall_offset), (width - wall_offset, wall_offset), wall_width)
               ]
 
-    player1 = Player(15)
-    player1.show(space)
-    player2 = Player(20, (255, 255, 50))
-    player2.show(space)
+    player1 = Player(space, 15, "red")
+    player2 = Player(space, 20, "green")
 
     for s in static:
         s.friction = 1.
         s.group = 1
+        s.collision_type = collision_types["wall"]
     space.add(static)
+
+    bullets = []
+
+    # Make bricks be removed when hit by ball
+    def remove_bullet(arbiter, space, data):
+        bullet_shape = arbiter.shapes[0]
+        space.remove(bullet_shape, bullet_shape.body)
+        bullets.remove(bullet_shape)
+        return True
+
+    h = space.add_collision_handler(
+        collision_types["bullet"],
+        collision_types["wall"]
+    )
+    h.pre_solve = remove_bullet
 
     while running:
         for event in pygame.event.get():
@@ -126,8 +172,10 @@ def main():
             elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:
                 bullet = Bullet(space)
                 bullet.shoot(player1)
+                bullets.append(bullet.shape)
 
         player1.handle_keys()
+        player2.handle_keys2()
 
         ### Clear screen
         screen.fill(pygame.color.THECOLORS["black"])
