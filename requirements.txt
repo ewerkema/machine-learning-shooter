@@ -6,3 +6,5 @@ numpy
 mesa
 pygame
 pymunk
+matplotlib
+h5py

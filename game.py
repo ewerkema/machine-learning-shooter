@@ -18,12 +18,18 @@ collision_types = {
     "bullet": 2,
     "wall": 3,
 }
+FORWARD = 0
+BACKWARD = 1
+ROTATE_LEFT = 2
+ROTATE_RIGHT = 3
+SHOOT = 4
 
 
 class Player(pymunk.Body):
 
     def __init__(self, space, radius=15, player_color="red", speed=3):
         super().__init__()
+        self.score = 0
         self.offset = {
             "xmin": wall_offset + wall_width + radius,
             "xmax": SCREEN_WIDTH - wall_offset - wall_width - radius,
@@ -46,6 +52,15 @@ class Player(pymunk.Body):
 
         space.add(self, self.shape)
 
+    def hurt(self):
+        self.score -= 1
+
+    def hit(self):
+        self.score += 1
+
+    def act(self, action):
+        return self.update_state(action)
+
     def handle_keys(self):
         keys = pygame.key.get_pressed()
         if keys[K_UP]:
@@ -57,16 +72,20 @@ class Player(pymunk.Body):
         elif keys[K_RIGHT]:
             self.rotate_right()
 
-    def handle_keys2(self):
-        keys = pygame.key.get_pressed()
-        if keys[K_w]:
+    def update_state(self, action):
+        if action == FORWARD:
             self.forward()
-        elif keys[K_s]:
+        elif action == BACKWARD:
             self.backward()
-        if keys[K_a]:
+        elif action == ROTATE_LEFT:
             self.rotate_left()
-        elif keys[K_d]:
+        elif action == ROTATE_RIGHT:
             self.rotate_right()
+        elif action == SHOOT:
+            bullet = self.shoot()
+            return bullet
+
+        return False
 
     def forward(self):
         self.position = (
@@ -86,10 +105,13 @@ class Player(pymunk.Body):
     def rotate_right(self):
         self.angle -= (self.speed * 2 / 100)
 
+    def shoot(self):
+        return Bullet(self.space, self)
+
 
 class Bullet(pymunk.Body):
 
-    def __init__(self, space, *args, **kwargs):
+    def __init__(self, space, player, *args, **kwargs):
         super(Bullet, self).__init__(*args, **kwargs)
         self.mass = 1
         self.radius = 2
@@ -98,10 +120,9 @@ class Bullet(pymunk.Body):
         self.shape = pymunk.Circle(self, self.radius)
         self.shape.friction = .5
         self.shape.collision_type = collision_types["bullet"]
-
+        self.player = player
         space.add(self, self.shape)
 
-    def shoot(self, player):
         self.position = player.position + Vec2d(player.shape.radius, 0).rotated(player.angle)
         self.angle = player.angle
         impulse = self.power * Vec2d(1, 0)
@@ -119,16 +140,16 @@ class Game(object):
         the game. """
 
         self.space = pymunk.Space()
-
-        self.score = 0
         self.game_over = False
 
         # Create bullet lists
         self.bullets = []
 
         # Create the players
-        self.player1 = Player(self.space, 15, "red")
-        self.player2 = Player(self.space, 20, "green")
+        self.players = [
+            Player(self.space, 15, "red"),
+            Player(self.space, 20, "green"),
+        ]
 
         # Create walls
         self.create_walls()
@@ -161,18 +182,30 @@ class Game(object):
         def remove_bullet(arbiter, space, data):
             bullet_shape = arbiter.shapes[0]
             space.remove(bullet_shape, bullet_shape.body)
-            self.bullets.remove(bullet_shape)
+            for bullet in self.bullets:
+                if bullet.shape == bullet_shape:
+                    self.bullets.remove(bullet)
             return True
 
         h = self.space.add_collision_handler(collision_types["bullet"], collision_types["wall"])
         h.pre_solve = remove_bullet
 
-        def add_point(arbiter, space, data):
-            self.score += 1
+        def process_bullet_hit(arbiter, space, data):
+            bullet_shape = arbiter.shapes[0]
+            player_shape = arbiter.shapes[1]
+
+            for bullet in self.bullets:
+                if bullet.shape == bullet_shape:
+                    bullet.player.hit()
+
+            for player in self.players:
+                if player.shape == player_shape:
+                    player.hurt()
+
             return remove_bullet(arbiter, space, data)
 
         g = self.space.add_collision_handler(collision_types["bullet"], collision_types["player"])
-        g.pre_solve = add_point
+        g.pre_solve = process_bullet_hit
 
     def run_logic(self):
         """
@@ -181,11 +214,11 @@ class Game(object):
         """
         if not self.game_over:
             # Handle keys of players
-            self.player1.handle_keys()
-            self.player2.handle_keys2()
+            for player in self.players:
+                player.handle_keys()
 
-            if self.score == 10:
-                self.game_over = True
+                if player.score == 10:
+                    self.game_over = True
 
     def process_events(self):
         """ Process all of the events. Return a "False" if we need
@@ -193,13 +226,12 @@ class Game(object):
 
         for event in pygame.event.get():
             if event.type == QUIT or \
-                                    event.type == KEYDOWN and (event.key in [K_ESCAPE, K_q]):
+                    event.type == KEYDOWN and (event.key in [K_ESCAPE, K_q]):
                 return False
             elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:
                 if not self.game_over:
-                    bullet = Bullet(self.space)
-                    bullet.shoot(self.player1)
-                    self.bullets.append(bullet.shape)
+                    bullet = self.players[0].shoot()
+                    self.bullets.append(bullet)
                 else:
                     self.__init__()
 
@@ -222,7 +254,12 @@ class Game(object):
             self.space.debug_draw(draw_options)
 
             # Info and flip screen
-            screen.blit(font.render("Score: " + str(self.score), 1, THECOLORS["white"]), (0, 0))
+            scores = ''
+            i = 1
+            for player in self.players:
+                scores += 'Player ' + str(i) + ': ' + str(player.score) + ' '
+                i += 1
+            screen.blit(font.render("Scores: " + scores, 1, THECOLORS["white"]), (0, 0))
             screen.blit(font.render("Aim with mouse, press to shoot the bullet", 1, THECOLORS["darkgrey"]),
                         (5, SCREEN_HEIGHT - 35))
             screen.blit(font.render("Press ESC or Q to quit", 1, THECOLORS["darkgrey"]), (5, SCREEN_HEIGHT - 20))
@@ -256,6 +293,13 @@ def main():
 
         # Draw the current frame
         game.display_frame(screen)
+
+        # Update players randomly
+        for player in game.players:
+            action = random.randint(0, 4)
+            maybeBullet = player.act(action)
+            if maybeBullet is not False:
+                game.bullets.append(maybeBullet)
 
         # Update frame and physics
         fps = 60
