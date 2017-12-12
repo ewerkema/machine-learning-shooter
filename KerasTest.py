@@ -80,7 +80,7 @@ class Maze(object):
 
 
 class Memory(object):
-    def __init__(self, max_memory=50, discount=.9):
+    def __init__(self, max_memory=100, discount=1):
         self.max_memory = max_memory
         self.memory = list()
         self.discount = discount
@@ -91,7 +91,7 @@ class Memory(object):
         if len(self.memory) > self.max_memory:
             del self.memory[0]
 
-    def get_batch(self, model, batch_size=10):
+    def get_batch(self, model, batch_size=250):
         len_memory = len(self.memory)
         num_actions = model.output_shape[-1]
         env_dim = self.memory[0][0][0].shape[1]
@@ -112,7 +112,7 @@ class Memory(object):
 
 class SelfLearningAgent(object):
 
-    def __init__(self, grid_size, hidden_size=10, num_actions=4):
+    def __init__(self, grid_size, hidden_size=100, num_actions=4):
         # parameters
         self.grid_size = grid_size
         self.hidden_size = hidden_size
@@ -124,7 +124,7 @@ class SelfLearningAgent(object):
         # init model
         self.model = Sequential()
         self.model.add(Dense(self.hidden_size, input_shape=(self.grid_size ** 2,), activation='sigmoid'))
-        # self.model.add(Dense(self.hidden_size, activation='sigmoid'))
+        #self.model.add(Dense(self.hidden_size, activation='sigmoid'))
         self.model.add(Dense(self.num_actions))
         self.model.compile(sgd(lr=.2), "mse")
         self.memory = Memory()
@@ -141,10 +141,11 @@ class SelfLearningAgent(object):
         self.memory.remember([input_data, action, reward, input_datap1])
         inputs, targets = self.memory.get_batch(self.model)
         loss = self.model.train_on_batch(inputs, targets)
+        return loss
 
 grid_size = 10
-epochs = 100
-game_length = 20
+epochs = 10
+game_length = 30
 random_locations = False
 
 agent = SelfLearningAgent(grid_size)
@@ -162,22 +163,23 @@ for epoch in range(epochs):
         maze.update_state(action)
         input_datap1 = maze.get_1d_grid()
         reward = maze.get_reward()
-        agent.get_new_state(input_data, action, reward, input_datap1)
+        loss = agent.get_new_state(input_data, action, reward, input_datap1)
         input_data = input_datap1
-        if False: # x == 0 for lines in graph
-            rewards[(epoch * game_length) + x] = 0
+        # print(loss)
+        #TODO Loss is too big!
+        if True: # x True for loss, False for Reward
+            rewards[(epoch * game_length) + x] = loss
         else:
             rewards[(epoch*game_length)+x] = maze.get_reward()
+        maze.print_grid()
 
 
 x = range(0, epochs*game_length)
 plt.plot(x, rewards)
 plt.plot(x, np.zeros(epochs*game_length) + (grid_size*2))
+# axes = plt.gca()
+# axes.set_ylim([0, grid_size*3])
 
 plt.show()
 
-
-print("XPlace = ", maze.xplace, "YPlace = ", maze.yplace)
-print("XGoal = ", maze.xgoal, "YGoal = ", maze.ygoal)
-print("Reward = ", maze.get_reward(), "/ ", grid_size*2)
 
