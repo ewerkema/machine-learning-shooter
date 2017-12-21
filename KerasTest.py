@@ -2,6 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from keras.models import Sequential
 from keras.layers.core import Dense
+from keras.layers import LSTM
 from keras.optimizers import sgd
 
 
@@ -21,12 +22,12 @@ class Maze(object):
             self.xgoal = grid_size - 1
             self.ygoal = grid_size - 1
 
-        self.xlava = int(grid_size / 2)
-        self.ylava = int(grid_size / 2)
+        xdistance = abs(self.xplace - self.xgoal)
+        ydistance = abs(self.yplace - self.ygoal)
+        self.distance_to_goal = xdistance + ydistance
 
         self.grid[self.xplace, self.yplace] = 5
         self.grid[self.xgoal, self.ygoal] = 10
-        self.grid[self.xlava, self.ylava] = -10
 
     def _update_place(self, action):
         xplace = self.xplace
@@ -42,6 +43,8 @@ class Maze(object):
             xplace += 1
         elif action == 3:
             yplace += 1
+        else:
+            print 'Error!'
 
         if xplace < 0:
             xplace = 0
@@ -54,16 +57,23 @@ class Maze(object):
         self.xplace = xplace
         self.yplace = yplace
         if self.xplace == self.xgoal and self.yplace == self.ygoal:
-            self.extra_reward += 1000
-        if self.xplace == self.xlava and self.yplace == self.ylava:
-            self.extra_reward -= 1000
+            self.extra_reward = 10
+        else:
+            self.extra_reward = 0
 
         self.grid[self.xplace, self.yplace] = 5
 
     def get_reward(self):
-        xreward = self.grid_size - abs(self.xplace - self.xgoal)
-        yreward = self.grid_size - abs(self.yplace - self.ygoal)
-        return xreward + yreward + self.extra_reward
+        previousdistance = self.distance_to_goal
+        xdistance = abs(self.xplace - self.xgoal)
+        ydistance = abs(self.yplace - self.ygoal)
+        self.distance_to_goal = xdistance + ydistance
+        if previousdistance == self.distance_to_goal:
+            return 0
+        elif previousdistance > self.distance_to_goal:
+            return 1
+        else:
+            return -1
 
     # action 0 = up, 1 = left, 2 = down, 3 = right
     def update_state(self, action):
@@ -71,16 +81,13 @@ class Maze(object):
 
     def print_grid(self):
         print self.grid
-        print("X = ", maze.xplace)
-        print("Y = ", maze.yplace)
-        print("Reward = ", maze.get_reward(), "/20")
 
     def get_1d_grid(self):
         return self.grid.reshape((1, -1))
 
 
 class Memory(object):
-    def __init__(self, max_memory=100, discount=1):
+    def __init__(self, max_memory=500, discount=.9):
         self.max_memory = max_memory
         self.memory = list()
         self.discount = discount
@@ -112,7 +119,7 @@ class Memory(object):
 
 class SelfLearningAgent(object):
 
-    def __init__(self, grid_size, hidden_size=100, num_actions=4):
+    def __init__(self, grid_size, hidden_size=5, num_actions=4):
         # parameters
         self.grid_size = grid_size
         self.hidden_size = hidden_size
@@ -123,18 +130,19 @@ class SelfLearningAgent(object):
     def _init_model(self):
         # init model
         self.model = Sequential()
-        self.model.add(Dense(self.hidden_size, input_shape=(self.grid_size ** 2,), activation='sigmoid'))
-        #self.model.add(Dense(self.hidden_size, activation='sigmoid'))
+        self.model.add(Dense(self.hidden_size, input_shape=(self.grid_size ** 2, ), activation='sigmoid'))
+        # self.model.add(LSTM(self.hidden_size))
         self.model.add(Dense(self.num_actions))
         self.model.compile(sgd(lr=.2), "mse")
         self.memory = Memory()
 
-    def predict_action(self, input_data, epsilon=.2):
+    def predict_action(self, input_data, epsilon=.1):
         if np.random.rand() <= epsilon:
             action = np.random.randint(0, self.num_actions, size=1)[0]
         else:
             q = self.model.predict(input_data)
             action = np.argmax(q[0])
+            print q[0]
         return action
 
     def get_new_state(self, input_data, action, reward, input_datap1):
@@ -143,8 +151,9 @@ class SelfLearningAgent(object):
         loss = self.model.train_on_batch(inputs, targets)
         return loss
 
-grid_size = 10
-epochs = 10
+
+grid_size = 5
+epochs = 5
 game_length = 30
 random_locations = False
 
@@ -165,18 +174,18 @@ for epoch in range(epochs):
         reward = maze.get_reward()
         loss = agent.get_new_state(input_data, action, reward, input_datap1)
         input_data = input_datap1
-        # print(loss)
-        #TODO Loss is too big!
         if True: # x True for loss, False for Reward
             rewards[(epoch * game_length) + x] = loss
         else:
             rewards[(epoch*game_length)+x] = maze.get_reward()
+            plt.plot(x, np.zeros(epochs * game_length) + (grid_size * 2))
         maze.print_grid()
 
+print maze.get_1d_grid()
+print 'Weights = ' + str(agent.model.get_weights())
 
 x = range(0, epochs*game_length)
 plt.plot(x, rewards)
-plt.plot(x, np.zeros(epochs*game_length) + (grid_size*2))
 # axes = plt.gca()
 # axes.set_ylim([0, grid_size*3])
 
