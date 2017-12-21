@@ -1,14 +1,17 @@
 import sys
 
-import numpy
+import numpy as np
 import pygame
+import json
 from pygame.locals import *
 from pygame.color import *
 import random
-
+import agent as learn
 import pymunk
 from pymunk.vec2d import Vec2d
 import pymunk.pygame_util
+import matplotlib.pyplot as plt
+import os.path
 
 SCREEN_WIDTH, SCREEN_HEIGHT = 1000, 800
 wall_offset = 60
@@ -30,6 +33,8 @@ class Player(pymunk.Body):
     def __init__(self, space, radius=15, player_color="red", speed=3):
         super().__init__()
         self.score = 0
+        self.old_score = 0
+        self.last_action = None
         self.offset = {
             "xmin": wall_offset + wall_width + radius,
             "xmax": SCREEN_WIDTH - wall_offset - wall_width - radius,
@@ -42,7 +47,7 @@ class Player(pymunk.Body):
             self.offset["xmin"] + random.randint(0, self.offset["xmax"] - self.offset["xmin"]),
             self.offset["ymin"] + random.randint(0, self.offset["ymax"] - self.offset["ymin"])
         )
-        self.angle = 0
+        self.angle = random.randint(0, 360)
 
         self.shape = pymunk.Circle(self, radius)
         self.shape.color = THECOLORS[player_color]
@@ -52,6 +57,9 @@ class Player(pymunk.Body):
 
         space.add(self, self.shape)
 
+    def get_reward(self):
+        return self.score - self.old_score
+
     def hurt(self):
         self.score -= 1
 
@@ -59,6 +67,8 @@ class Player(pymunk.Body):
         self.score += 1
 
     def act(self, action):
+        self.old_score = self.score
+        self.last_action = action
         return self.update_state(action)
 
     def handle_keys(self):
@@ -89,14 +99,14 @@ class Player(pymunk.Body):
 
     def forward(self):
         self.position = (
-            max(self.offset["xmin"], min(self.offset["xmax"], self.position.x + numpy.cos(self.angle) * self.speed)),
-            max(self.offset["ymin"], min(self.offset["ymax"], self.position.y + numpy.sin(self.angle) * self.speed))
+            max(self.offset["xmin"], min(self.offset["xmax"], self.position.x + np.cos(self.angle) * self.speed)),
+            max(self.offset["ymin"], min(self.offset["ymax"], self.position.y + np.sin(self.angle) * self.speed))
         )
 
     def backward(self):
         self.position = (
-            max(self.offset["xmin"], min(self.offset["xmax"], self.position.x - numpy.cos(self.angle) * self.speed)),
-            max(self.offset["ymin"], min(self.offset["ymax"], self.position.y - numpy.sin(self.angle) * self.speed))
+            max(self.offset["xmin"], min(self.offset["xmax"], self.position.x - np.cos(self.angle) * self.speed)),
+            max(self.offset["ymin"], min(self.offset["ymax"], self.position.y - np.sin(self.angle) * self.speed))
         )
 
     def rotate_left(self):
@@ -147,8 +157,8 @@ class Game(object):
 
         # Create the players
         self.players = [
-            Player(self.space, 15, "red"),
-            Player(self.space, 20, "green"),
+            Player(self.space, 50, "red"),
+            Player(self.space, 50, "green"),
         ]
 
         # Create walls
@@ -217,9 +227,6 @@ class Game(object):
             for player in self.players:
                 player.handle_keys()
 
-                if player.score == 10:
-                    self.game_over = True
-
     def process_events(self):
         """ Process all of the events. Return a "False" if we need
             to close the window. """
@@ -234,20 +241,36 @@ class Game(object):
                     self.bullets.append(bullet)
                 else:
                     self.__init__()
-
         return True
 
-    def display_frame(self, screen):
+    def get_data(self):
+        data = np.zeros(10)
+        i = 0
+        for player in self.players:
+            data[i] = player.position.x
+            data[i+1] = player.position.y
+            data[i+2] = player.angle
+            i += 3
+        for bullet in self.bullets:
+            if i > 9:
+                break
+
+            data[i] = bullet.position.x
+            data[i+1] = bullet.position.y
+            i += 2
+        return data.reshape((1, -1))
+
+    def display_frame(self, screen, q1, q2):
         """ Display everything to the screen for the game. """
         screen.fill(pygame.color.THECOLORS["black"])
         font = pygame.font.SysFont("Arial", 16)
         draw_options = pymunk.pygame_util.DrawOptions(screen)
 
-        if self.game_over:
-            text = font.render("Game Over, click to restart", True, THECOLORS["red"])
-            center_x = (SCREEN_WIDTH // 2) - (text.get_width() // 2)
-            center_y = (SCREEN_HEIGHT // 2) - (text.get_height() // 2)
-            screen.blit(text, [center_x, center_y])
+        # if self.game_over:
+        #     text = font.render("Game Over, click to restart", True, THECOLORS["red"])
+        #     center_x = (SCREEN_WIDTH // 2) - (text.get_width() // 2)
+        #     center_y = (SCREEN_HEIGHT // 2) - (text.get_height() // 2)
+        #     screen.blit(text, [center_x, center_y])
 
         if not self.game_over:
             # Draw stuff
@@ -260,7 +283,7 @@ class Game(object):
                 scores += 'Player ' + str(i) + ': ' + str(player.score) + ' '
                 i += 1
             screen.blit(font.render("Scores: " + scores, 1, THECOLORS["white"]), (0, 0))
-            screen.blit(font.render("Aim with mouse, press to shoot the bullet", 1, THECOLORS["darkgrey"]),
+            screen.blit(font.render("Player 1: " + str(q1[0:5]) + ", Player 2: " + str(q2[0:5]), 1, THECOLORS["darkgrey"]),
                         (5, SCREEN_HEIGHT - 35))
             screen.blit(font.render("Press ESC or Q to quit", 1, THECOLORS["darkgrey"]), (5, SCREEN_HEIGHT - 20))
 
@@ -279,32 +302,69 @@ def main():
 
     clock = pygame.time.Clock()
 
-    # Create an instance of the Game class
-    game = Game()
+    # Create model learning
+    total_players = 2
+    agents = []
+    for x in range(total_players):
+        name = "model_player_" + str(x) + ".h5"
+        agent = learn.SelfLearningAgent(2, 2)
+        if os.path.isfile(name):
+            print("Model is loaded for agent" + str(x))
+            agent.model.load_weights(name)
+        agents.append(agent)
 
-    # Main game loop
-    running = True
-    while running:
-        # Process events (keystrokes, mouse clicks, etc)
-        running = game.process_events()
+    epochs = 5
+    fps = 25
+    game_length = fps * 15
+    rewards = np.zeros(epochs*game_length)
 
-        # Update object positions, check for collisions
-        game.run_logic()
+    for epoch in range(epochs):
+        # Main game loop
+        game = Game()
+        for x in range(game_length):
+            # Update object positions, check for collisions
+            game.run_logic()
+            game.process_events()
 
-        # Draw the current frame
-        game.display_frame(screen)
+            # Update players based on model
+            before_data = game.get_data()
+            i = 0
+            for player in game.players:
+                action = agents[i].predict_action(before_data)
+                maybe_bullet = player.act(action)
+                if maybe_bullet is not False:
+                    game.bullets.append(maybe_bullet)
+                i += 1
 
-        # Update players randomly
-        for player in game.players:
-            action = random.randint(0, 4)
-            maybeBullet = player.act(action)
-            if maybeBullet is not False:
-                game.bullets.append(maybeBullet)
+            # Draw the current frame
+            game.display_frame(screen, agents[0].model.predict(before_data)[0], agents[1].model.predict(before_data)[0])
 
-        # Update frame and physics
-        fps = 60
-        game.update_physics(fps)
-        clock.tick(fps)
+            # Update frame and physics
+            game.update_physics(fps)
+            clock.tick(fps)
+
+            after_data = game.get_data()
+            i = 0
+            for player in game.players:
+                reward = player.get_reward()
+                loss = agents[i].get_new_state(before_data, player.last_action, reward, after_data)
+                rewards[(epoch * game_length) + x] = loss
+                i += 1
+
+    x = range(0, epochs * game_length)
+    plt.plot(x, rewards)
+    # axes = plt.gca()
+    # axes.set_ylim([0, grid_size*3])
+    plt.show()
+
+    # Save trained model weights and architecture, this will be used by the visualization code
+    i = 0
+    for agent in agents:
+        name = "model_player_" + str(i)
+        agent.model.save_weights(name + ".h5", overwrite=True)
+        # with open(name + ".json", "w") as outfile:
+        #     json.dump(agent.model.to_json(), outfile)
+        i += 1
 
     # Close window and exit
     pygame.quit()
