@@ -16,6 +16,8 @@ import os.path
 SCREEN_WIDTH, SCREEN_HEIGHT = 1000, 800
 wall_offset = 60
 wall_width = 20
+GAME_WIDTH = SCREEN_WIDTH - (wall_offset + wall_width) * 2
+GAME_HEIGHT = SCREEN_HEIGHT - (wall_offset + wall_width) * 2
 collision_types = {
     "player": 1,
     "bullet": 2,
@@ -26,6 +28,16 @@ BACKWARD = 1
 ROTATE_LEFT = 2
 ROTATE_RIGHT = 3
 SHOOT = 4
+PLAYER_ITERATOR = 1
+
+
+def increment_player_iterator():
+    global PLAYER_ITERATOR
+    PLAYER_ITERATOR += 1
+
+
+def normalize_coordinate(value):
+    return int(np.floor(value / 40))
 
 
 class Player(pymunk.Body):
@@ -35,6 +47,8 @@ class Player(pymunk.Body):
         self.score = 0
         self.old_score = 0
         self.last_action = None
+        self.index = PLAYER_ITERATOR
+        increment_player_iterator()
         self.offset = {
             "xmin": wall_offset + wall_width + radius,
             "xmax": SCREEN_WIDTH - wall_offset - wall_width - radius,
@@ -61,7 +75,7 @@ class Player(pymunk.Body):
         return self.score - self.old_score
 
     def hurt(self):
-        self.score -= 1
+        self.score -= 0
 
     def hit(self):
         self.score += 1
@@ -124,7 +138,7 @@ class Bullet(pymunk.Body):
     def __init__(self, space, player, *args, **kwargs):
         super(Bullet, self).__init__(*args, **kwargs)
         self.mass = 1
-        self.radius = 2
+        self.radius = 10
         self.power = 1000
         self.moment = pymunk.moment_for_circle(self.mass, 0, self.radius)
         self.shape = pymunk.Circle(self, self.radius)
@@ -148,6 +162,8 @@ class Game(object):
     def __init__(self):
         """ Constructor. Create all our attributes and initialize
         the game. """
+        global PLAYER_ITERATOR
+        PLAYER_ITERATOR = 1
 
         self.space = pymunk.Space()
         self.game_over = False
@@ -170,10 +186,9 @@ class Game(object):
     def create_walls(self):
         # walls - the left-top-right walls
         top_left = (wall_offset, wall_offset)
-        top_right = (wall_offset, SCREEN_HEIGHT - wall_offset)
-        bottom_left = (SCREEN_WIDTH - wall_offset, wall_offset)
+        top_right = (SCREEN_WIDTH - wall_offset, wall_offset)
+        bottom_left = (wall_offset, SCREEN_HEIGHT - wall_offset)
         bottom_right = (SCREEN_WIDTH - wall_offset, SCREEN_HEIGHT - wall_offset)
-
         static = [
             pymunk.Segment(self.space.static_body, top_left, top_right, wall_width),
             pymunk.Segment(self.space.static_body, top_right, bottom_right, wall_width),
@@ -244,23 +259,22 @@ class Game(object):
         return True
 
     def get_data(self):
-        data = np.zeros(10)
-        i = 0
+        width = normalize_coordinate(GAME_WIDTH)
+        height = normalize_coordinate(GAME_HEIGHT)
+        data = np.zeros((width, height+1))
+        offset = wall_width + wall_offset
         for player in self.players:
-            data[i] = player.position.x
-            data[i+1] = player.position.y
-            data[i+2] = player.angle
-            i += 3
+            x = normalize_coordinate(player.position.x - offset)
+            y = normalize_coordinate(player.position.y - offset)
+            data[x, y] = player.index
+            data[player.index, height] = player.angle
         for bullet in self.bullets:
-            if i > 9:
-                break
-
-            data[i] = bullet.position.x
-            data[i+1] = bullet.position.y
-            i += 2
+            x = normalize_coordinate(bullet.position.x - offset)
+            y = normalize_coordinate(bullet.position.y - offset)
+            data[x, y] = -bullet.player.index
         return data.reshape((1, -1))
 
-    def display_frame(self, screen, q1, q2):
+    def display_frame(self, screen, q1, q2, epoch):
         """ Display everything to the screen for the game. """
         screen.fill(pygame.color.THECOLORS["black"])
         font = pygame.font.SysFont("Arial", 16)
@@ -280,9 +294,9 @@ class Game(object):
             scores = ''
             i = 1
             for player in self.players:
-                scores += 'Player ' + str(i) + ': ' + str(player.score) + ' '
+                scores += 'Player ' + str(i) + ': ' + str(player.score) + '; '
                 i += 1
-            screen.blit(font.render("Scores: " + scores, 1, THECOLORS["white"]), (0, 0))
+            screen.blit(font.render("Scores= " + scores + " Epoch = " + str(epoch), 1, THECOLORS["white"]), (0, 0))
             screen.blit(font.render("Player 1: " + str(q1[0:5]) + ", Player 2: " + str(q2[0:5]), 1, THECOLORS["darkgrey"]),
                         (5, SCREEN_HEIGHT - 35))
             screen.blit(font.render("Press ESC or Q to quit", 1, THECOLORS["darkgrey"]), (5, SCREEN_HEIGHT - 20))
@@ -307,13 +321,13 @@ def main():
     agents = []
     for x in range(total_players):
         name = "model_player_" + str(x) + ".h5"
-        agent = learn.SelfLearningAgent(2, 2)
+        agent = learn.SelfLearningAgent(normalize_coordinate(GAME_WIDTH) * (1+normalize_coordinate(GAME_HEIGHT)))
         if os.path.isfile(name):
             print("Model is loaded for agent" + str(x))
             agent.model.load_weights(name)
         agents.append(agent)
 
-    epochs = 5
+    epochs = 50
     fps = 25
     game_length = fps * 15
     rewards = np.zeros(epochs*game_length)
@@ -321,10 +335,13 @@ def main():
     for epoch in range(epochs):
         # Main game loop
         game = Game()
+        for agent in agents:
+            agent.memory.memory = list()
         for x in range(game_length):
             # Update object positions, check for collisions
             game.run_logic()
-            game.process_events()
+            if not game.process_events():
+                break
 
             # Update players based on model
             before_data = game.get_data()
@@ -337,7 +354,7 @@ def main():
                 i += 1
 
             # Draw the current frame
-            game.display_frame(screen, agents[0].model.predict(before_data)[0], agents[1].model.predict(before_data)[0])
+            game.display_frame(screen, agents[0].model.predict(before_data)[0], agents[1].model.predict(before_data)[0], epoch)
 
             # Update frame and physics
             game.update_physics(fps)
@@ -348,8 +365,11 @@ def main():
             for player in game.players:
                 reward = player.get_reward()
                 loss = agents[i].get_new_state(before_data, player.last_action, reward, after_data)
-                rewards[(epoch * game_length) + x] = loss
+                # rewards[(epoch * game_length) + x] = loss
                 i += 1
+        else:
+            continue
+        break
 
     x = range(0, epochs * game_length)
     plt.plot(x, rewards)

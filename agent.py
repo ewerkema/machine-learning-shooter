@@ -39,9 +39,9 @@ class Memory(object):
 
 class SelfLearningAgent(object):
 
-	def __init__(self, amount_players, amount_bullets, hidden_size=5, num_actions=5):
+	def __init__(self, input_size, hidden_size=5, num_actions=5):
 		# parameters
-		self.input_size = amount_players * 3 + amount_bullets * 2
+		self.input_size = input_size
 		self.hidden_size = hidden_size
 		self.num_actions = num_actions
 		self._init_model()
