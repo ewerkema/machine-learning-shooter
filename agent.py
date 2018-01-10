@@ -39,7 +39,7 @@ class Memory(object):
 
 class SelfLearningAgent(object):
 
-	def __init__(self, input_size, hidden_size=5, num_actions=5):
+	def __init__(self, input_size, hidden_size=150, num_actions=5):
 		# parameters
 		self.input_size = input_size
 		self.hidden_size = hidden_size
@@ -50,11 +50,11 @@ class SelfLearningAgent(object):
 		# init model
 		self.model = Sequential()
 		self.model.add(Dense(self.hidden_size, input_shape=(self.input_size, ), activation='sigmoid'))
-		self.model.add(Dense(self.num_actions))
-		self.model.compile(sgd(lr=.2), "mse")
+		self.model.add(Dense(self.num_actions, activation='linear'))
+		self.model.compile(optimizer=sgd(lr=1e-03), loss="mse")
 		self.memory = Memory()
 
-	def predict_action(self, input_data, epsilon=.2):
+	def predict_action(self, input_data, epsilon=.1):
 		if np.random.rand() <= epsilon:
 			action = np.random.randint(0, self.num_actions, size=1)[0]
 		else:

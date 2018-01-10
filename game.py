@@ -12,6 +12,7 @@ from pymunk.vec2d import Vec2d
 import pymunk.pygame_util
 import matplotlib.pyplot as plt
 import os.path
+import time
 
 SCREEN_WIDTH, SCREEN_HEIGHT = 1000, 800
 wall_offset = 60
@@ -29,6 +30,7 @@ ROTATE_LEFT = 2
 ROTATE_RIGHT = 3
 SHOOT = 4
 PLAYER_ITERATOR = 1
+DEBUG = True
 
 
 def increment_player_iterator():
@@ -46,6 +48,8 @@ class Player(pymunk.Body):
         super().__init__()
         self.score = 0
         self.old_score = 0
+        self.shot_bullets = 0
+        self.hit_bullets = 0
         self.last_action = None
         self.index = PLAYER_ITERATOR
         increment_player_iterator()
@@ -75,10 +79,11 @@ class Player(pymunk.Body):
         return self.score - self.old_score
 
     def hurt(self):
-        self.score -= 0
+        self.score -= 1
 
     def hit(self):
         self.score += 1
+        self.hit_bullets += 1
 
     def act(self, action):
         self.old_score = self.score
@@ -130,6 +135,7 @@ class Player(pymunk.Body):
         self.angle -= (self.speed * 2 / 100)
 
     def shoot(self):
+        self.shot_bullets += 1
         return Bullet(self.space, self)
 
 
@@ -261,13 +267,26 @@ class Game(object):
     def get_data(self):
         width = normalize_coordinate(GAME_WIDTH)
         height = normalize_coordinate(GAME_HEIGHT)
-        data = np.zeros((width, height+1))
+        data = np.zeros((width, height+2))
         offset = wall_width + wall_offset
         for player in self.players:
             x = normalize_coordinate(player.position.x - offset)
             y = normalize_coordinate(player.position.y - offset)
             data[x, y] = player.index
-            data[player.index, height] = player.angle
+            data[player.index, height] = 180 * (player.angle % (2 * np.pi)) / np.pi
+            for other in self.players:
+                if player.index is not other.index:
+                    AB = other.position - player.position
+                    normA = (np.cos(player.angle), np.sin(player.angle))
+                    in_front = np.dot(AB, normA) > 0
+                    if in_front:
+                        a = np.tan(player.angle)
+                        b = -1
+                        c = player.position.y - a * player.position.x
+                        distance_to_shooting_line = np.abs(a * other.position.x + b * other.position.y + c) / np.sqrt(a * a + b * b)
+                        min_distance = 50
+                        if distance_to_shooting_line < min_distance:
+                            data[player.index, height+1] = min_distance - distance_to_shooting_line
         for bullet in self.bullets:
             x = normalize_coordinate(bullet.position.x - offset)
             y = normalize_coordinate(bullet.position.y - offset)
@@ -287,14 +306,34 @@ class Game(object):
         #     screen.blit(text, [center_x, center_y])
 
         if not self.game_over:
+            removeLines = []
+            if DEBUG:
+                for player in self.players:
+                    for other in self.players:
+                        if player.index is not other.index:
+                            AB = other.position - player.position
+                            normA = (np.cos(player.angle), np.sin(player.angle))
+                            in_front = np.dot(AB, normA) > 0
+                            if in_front:
+                                a = np.tan(player.angle)
+                                b = -1
+                                c = player.position.y - a * player.position.x
+                                angle = 180 * (player.angle % (2 * np.pi)) / np.pi
+                                x = 2000 if angle < 90 or angle >= 270 else -2000
+                                vision_position = (x, a * x + c)
+                                line = pymunk.Segment(self.space.static_body, player.position, vision_position, 1),
+                                self.space.add(line)
+                                removeLines.append(line)
             # Draw stuff
             self.space.debug_draw(draw_options)
+            for line in removeLines:
+                self.space.remove(line)
 
             # Info and flip screen
             scores = ''
             i = 1
             for player in self.players:
-                scores += 'Player ' + str(i) + ': ' + str(player.score) + '; '
+                scores += 'Player ' + str(i) + ': ' + str(player.score) + ' ( ' + str(player.position.x) + ', ' + str(player.position.y) + '); '
                 i += 1
             screen.blit(font.render("Scores= " + scores + " Epoch = " + str(epoch), 1, THECOLORS["white"]), (0, 0))
             screen.blit(font.render("Player 1: " + str(q1[0:5]) + ", Player 2: " + str(q2[0:5]), 1, THECOLORS["darkgrey"]),
@@ -321,16 +360,17 @@ def main():
     agents = []
     for x in range(total_players):
         name = "model_player_" + str(x) + ".h5"
-        agent = learn.SelfLearningAgent(normalize_coordinate(GAME_WIDTH) * (1+normalize_coordinate(GAME_HEIGHT)))
+        agent = learn.SelfLearningAgent(normalize_coordinate(GAME_WIDTH) * (2+normalize_coordinate(GAME_HEIGHT)))
         if os.path.isfile(name):
             print("Model is loaded for agent" + str(x))
             agent.model.load_weights(name)
         agents.append(agent)
 
-    epochs = 50
+    epochs = 10
     fps = 25
     game_length = fps * 15
     rewards = np.zeros(epochs*game_length)
+    players_won = np.zeros(total_players)
 
     for epoch in range(epochs):
         # Main game loop
@@ -347,6 +387,8 @@ def main():
             before_data = game.get_data()
             i = 0
             for player in game.players:
+                if DEBUG and player.index is not i+1:
+                    print("Incorrect agent loaded for player!!!!")
                 action = agents[i].predict_action(before_data)
                 maybe_bullet = player.act(action)
                 if maybe_bullet is not False:
@@ -365,11 +407,22 @@ def main():
             for player in game.players:
                 reward = player.get_reward()
                 loss = agents[i].get_new_state(before_data, player.last_action, reward, after_data)
-                # rewards[(epoch * game_length) + x] = loss
+                rewards[(epoch * game_length) + x] = loss
                 i += 1
         else:
+            best_player = None
+            best_score = 0
+            for player in game.players:
+                if player.score > best_score:
+                    best_score = player.score
+                    best_player = player.index
+            if best_player is not None:
+                players_won[best_player-1] += 1
+                print("Player " + str(best_player) + " won epoch " + str(epoch))
             continue
         break
+
+    print(players_won)
 
     x = range(0, epochs * game_length)
     plt.plot(x, rewards)
