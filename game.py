@@ -50,6 +50,7 @@ class Player(pymunk.Body):
         self.old_score = 0
         self.shot_bullets = 0
         self.hit_bullets = 0
+        self.shoot_cooldown = 0
         self.last_action = None
         self.index = PLAYER_ITERATOR
         increment_player_iterator()
@@ -114,6 +115,7 @@ class Player(pymunk.Body):
             bullet = self.shoot()
             return bullet
 
+        self.shoot_cooldown -= 1
         return False
 
     def forward(self):
@@ -135,8 +137,11 @@ class Player(pymunk.Body):
         self.angle -= (self.speed * 2 / 100)
 
     def shoot(self):
-        self.shot_bullets += 1
-        return Bullet(self.space, self)
+        if self.shoot_cooldown <= 0:
+            self.shot_bullets += 1
+            self.shoot_cooldown = 10
+            return Bullet(self.space, self)
+        return False
 
 
 class Bullet(pymunk.Body):
@@ -165,11 +170,13 @@ class Game(object):
         reset the game we'd just need to create a new instance of this
         class. """
 
-    def __init__(self):
+    def __init__(self, total_players):
         """ Constructor. Create all our attributes and initialize
         the game. """
         global PLAYER_ITERATOR
         PLAYER_ITERATOR = 1
+
+        self.total_players = total_players
 
         self.space = pymunk.Space()
         self.game_over = False
@@ -178,10 +185,12 @@ class Game(object):
         self.bullets = []
 
         # Create the players
-        self.players = [
-            Player(self.space, 50, "red"),
-            Player(self.space, 50, "green"),
-        ]
+        self.players = []
+
+        colors = ["red", "green", "blue", "purple", "yellow"]
+        for i in range(total_players):
+            player = Player(self.space, 50, colors[i])
+            self.players.append(player)
 
         # Create walls
         self.create_walls()
@@ -256,12 +265,6 @@ class Game(object):
             if event.type == QUIT or \
                     event.type == KEYDOWN and (event.key in [K_ESCAPE, K_q]):
                 return False
-            elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:
-                if not self.game_over:
-                    bullet = self.players[0].shoot()
-                    self.bullets.append(bullet)
-                else:
-                    self.__init__()
         return True
 
     def get_data(self):
@@ -356,7 +359,7 @@ def main():
     clock = pygame.time.Clock()
 
     # Create model learning
-    total_players = 2
+    total_players = 3
     agents = []
     for x in range(total_players):
         name = "model_player_" + str(x) + ".h5"
@@ -374,7 +377,7 @@ def main():
 
     for epoch in range(epochs):
         # Main game loop
-        game = Game()
+        game = Game(total_players)
         for agent in agents:
             agent.memory.memory = list()
         for x in range(game_length):
