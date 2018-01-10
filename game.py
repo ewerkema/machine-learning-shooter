@@ -336,7 +336,7 @@ class Game(object):
             scores = ''
             i = 1
             for player in self.players:
-                scores += 'Player ' + str(i) + ': ' + str(player.score) + ' ( ' + str(player.position.x) + ', ' + str(player.position.y) + '); '
+                scores += 'Player ' + str(i) + ': ' + str(player.score) + ' ( ' + str(round(player.position.x)) + ', ' + str(round(player.position.y)) + '); '
                 i += 1
             screen.blit(font.render("Scores= " + scores + " Epoch = " + str(epoch), 1, THECOLORS["white"]), (0, 0))
             screen.blit(font.render("Player 1: " + str(q1[0:5]) + ", Player 2: " + str(q2[0:5]), 1, THECOLORS["darkgrey"]),
@@ -359,21 +359,23 @@ def main():
     clock = pygame.time.Clock()
 
     # Create model learning
-    total_players = 3
+    total_players = 2
     agents = []
     for x in range(total_players):
         name = "model_player_" + str(x) + ".h5"
-        agent = learn.SelfLearningAgent(normalize_coordinate(GAME_WIDTH) * (2+normalize_coordinate(GAME_HEIGHT)))
+        hidden_size = 50 if x == 0 else 150
+        agent = learn.SelfLearningAgent(normalize_coordinate(GAME_WIDTH) * (2+normalize_coordinate(GAME_HEIGHT)), hidden_size)
         if os.path.isfile(name):
             print("Model is loaded for agent" + str(x))
             agent.model.load_weights(name)
         agents.append(agent)
 
-    epochs = 10
+    epochs = 500
     fps = 25
     game_length = fps * 15
     rewards = np.zeros(epochs*game_length)
     players_won = np.zeros(total_players)
+    player_won_history = np.zeros((total_players, epochs))
 
     for epoch in range(epochs):
         # Main game loop
@@ -422,10 +424,16 @@ def main():
             if best_player is not None:
                 players_won[best_player-1] += 1
                 print("Player " + str(best_player) + " won epoch " + str(epoch))
+            for player in game.players:
+                player_won_history[player.index-1][epoch] = players_won[player.index-1]
             continue
         break
 
+    print("Total wins per player:")
     print(players_won)
+    for i in range(total_players):
+        print("Player " + str(i+1) + "win history: ")
+        print(player_won_history[i])
 
     x = range(0, epochs * game_length)
     plt.plot(x, rewards)
@@ -438,8 +446,6 @@ def main():
     for agent in agents:
         name = "model_player_" + str(i)
         agent.model.save_weights(name + ".h5", overwrite=True)
-        # with open(name + ".json", "w") as outfile:
-        #     json.dump(agent.model.to_json(), outfile)
         i += 1
 
     # Close window and exit
