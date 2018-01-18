@@ -7,7 +7,7 @@ from keras.optimizers import sgd
 
 
 class Memory(object):
-	def __init__(self, max_memory=500, discount=.9):
+	def __init__(self, max_memory=500, discount=.99):
 		self.max_memory = max_memory
 		self.memory = list()
 		self.discount = discount
@@ -61,6 +61,17 @@ class SelfLearningAgent(object):
 			q = self.model.predict(input_data)[0]
 			action = np.argmax(q)
 		return action
+		#q_values = self.model.predict(input_data)[0]
+		# totalQ = sum(q_values)
+		# rand = np.random.uniform(0, totalQ)
+		# q = 0
+		# total = 0
+		# for i in range(len(q_values)):
+		# 	total += q_values[i]
+		# 	if rand <= total:
+		# 		q = i
+		# 		break
+		# return q
 
 	def get_new_state(self, input_data, action, reward, input_datap1):
 		self.memory.remember([input_data, action, reward, input_datap1])

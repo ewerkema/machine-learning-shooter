@@ -19,6 +19,7 @@ wall_offset = 60
 wall_width = 20
 GAME_WIDTH = SCREEN_WIDTH - (wall_offset + wall_width) * 2
 GAME_HEIGHT = SCREEN_HEIGHT - (wall_offset + wall_width) * 2
+EXTRA_LAYERS = 2
 collision_types = {
     "player": 1,
     "bullet": 2,
@@ -294,24 +295,30 @@ class Game(object):
         return True
 
     def get_data(self):
-        data_per_player = 6
-        data = np.zeros(self.total_players * data_per_player)
+        width = normalize_coordinate(GAME_WIDTH)
+        height = normalize_coordinate(GAME_HEIGHT)
         offset = wall_width + wall_offset
-        i = 0
+        data = np.zeros((EXTRA_LAYERS+self.total_players, width, height))
         for player in self.players:
-            data[i] = round(player.position.x - offset)
-            data[i + 1] = round(player.position.y - offset)
-            data[i + 2] = 180 * (player.angle % (2 * np.pi)) / np.pi
-            for other in self.players:
-                if player.index is not other.index:
-                    line = Line(player, other)
-                    data[i + 3] = line.destination_in_front()
-                    data[i + 4] = line.distance_score()
+            index = int(player.index-1)
+            x = normalize_coordinate(player.position.x - offset - player.radius)
+            y = normalize_coordinate(player.position.y - offset - player.radius)
+            data[index, x, y] = 1
+            shootX = min(width-1, max(0, x + int(round(np.cos(player.angle)))))
+            shootY = min(height-1, max(0, y + int(round(np.sin(player.angle)))))
+            data[index, shootX, shootY] = 0.5
+            # for other in self.players:
+            #     if player.index is not other.index:
+            #         line = Line(player, other)
+            #         data[i + 3] = 0
+            #         data[i + 4] = line.distance_score(500) / 500
             for bullet in self.bullets:
-                line = Line(bullet, player)
-                if line.destination_in_front() and line.distance_from_line() <= player.radius:
-                    data[i + 5] = 1
-            i += data_per_player
+                x = normalize_coordinate(bullet.position.x - offset)
+                y = normalize_coordinate(bullet.position.y - offset)
+                data[self.total_players, x, y] = 1
+                # line = Line(bullet, player)
+                # if line.destination_in_front() and line.distance_from_line() <= player.radius:
+                #     data[i + 5] = 1
         return data.reshape((1, -1))
 
     def display_frame(self, screen, q1, q2, epoch):
@@ -381,16 +388,18 @@ def main():
     # Create model learning
     total_players = 2
     agents = []
+    width = normalize_coordinate(GAME_WIDTH)
+    height = normalize_coordinate(GAME_HEIGHT)
     for x in range(total_players):
         name = "model_player_" + str(x) + ".h5"
-        hidden_size = 50 if x == 0 else 150
-        agent = learn.SelfLearningAgent(total_players * 6, hidden_size)
+        hidden_size = 150
+        agent = learn.SelfLearningAgent((EXTRA_LAYERS+total_players)*width*height, hidden_size)
         if os.path.isfile(name):
             print("Model is loaded for agent" + str(x))
             agent.model.load_weights(name)
         agents.append(agent)
 
-    epochs = 500
+    epochs = 10
     fps = 25
     game_length = fps * 15
     rewards = np.zeros(epochs * game_length)
@@ -414,6 +423,7 @@ def main():
             for player in game.players:
                 if DEBUG and player.index is not i + 1:
                     print("Incorrect agent loaded for player!!!!")
+                # epsilon = 1 if player.index == 1 else .1
                 action = agents[i].predict_action(before_data)
                 maybe_bullet = player.act(action)
                 if maybe_bullet is not False:
