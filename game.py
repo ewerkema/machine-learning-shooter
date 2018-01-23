@@ -7,6 +7,7 @@ from pygame.locals import *
 from pygame.color import *
 import random
 import agent as learn
+import agentLSTM
 import pymunk
 from pymunk.vec2d import Vec2d
 import pymunk.pygame_util
@@ -393,7 +394,11 @@ def main():
     for x in range(total_players):
         name = "model_player_" + str(x) + ".h5"
         hidden_size = 150
-        agent = learn.SelfLearningAgent((EXTRA_LAYERS+total_players)*width*height, hidden_size)
+        input_size = (EXTRA_LAYERS + total_players) * width * height
+        if x == 0:
+            agent = agentLSTM.SelfLearningAgent(input_size, hidden_size)
+        else:
+            agent = agentFF.SelfLearningAgent(input_size, hidden_size)
         if os.path.isfile(name):
             print("Model is loaded for agent" + str(x))
             agent.model.load_weights(name)
@@ -431,7 +436,7 @@ def main():
                 i += 1
 
             # Draw the current frame
-            game.display_frame(screen, agents[0].model.predict(before_data)[0], agents[1].model.predict(before_data)[0],
+            game.display_frame(screen, [0,0,0,0,0], agents[1].model.predict(before_data)[0],
                                epoch)
 
             # Update frame and physics
