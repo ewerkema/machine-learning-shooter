@@ -79,8 +79,17 @@ class Player(pymunk.Body):
 
         space.add(self, self.shape)
 
-    def get_reward(self):
-        return self.score - self.old_score
+    def get_reward(self, all_players):
+        bonus_fraction = .1
+        bonus_score = 0
+        for other in all_players:
+            if self.index is not other.index:
+                line = Line(self, other)
+                if line.destination_in_front():
+                    bonus_score += line.distance_score(500) / 500
+        bonus_score = bonus_score / (len(all_players) - 1)
+        total_score = (1 - bonus_fraction) * (self.score - self.old_score) + bonus_fraction * bonus_score
+        return total_score
 
     def hurt(self):
         self.score -= 1
@@ -446,7 +455,7 @@ def main():
             after_data = game.get_data()
             i = 0
             for player in game.players:
-                reward = player.get_reward()
+                reward = player.get_reward(game.players)
                 loss = agents[i].get_new_state(before_data, player.last_action, reward, after_data)
                 rewards[(epoch * game_length) + x] = loss
                 i += 1
