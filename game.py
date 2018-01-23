@@ -6,7 +6,7 @@ import json
 from pygame.locals import *
 from pygame.color import *
 import random
-import agent as learn
+import agent as agentFF
 import agentLSTM
 import pymunk
 from pymunk.vec2d import Vec2d
@@ -115,6 +115,7 @@ class Player(pymunk.Body):
             self.rotate_right()
 
     def update_state(self, action):
+        self.shoot_cooldown -= 1
         if action == FORWARD:
             self.forward()
         elif action == BACKWARD:
@@ -127,7 +128,6 @@ class Player(pymunk.Body):
             bullet = self.shoot()
             return bullet
 
-        self.shoot_cooldown -= 1
         return False
 
     def forward(self):

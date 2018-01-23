@@ -5,10 +5,10 @@ from keras.layers.core import Dense
 from keras.layers import LSTM
 from keras.optimizers import sgd
 
-TIMESTEPS = 20
+TIMESTEPS = 50
 
 class Memory(object):
-    def __init__(self, max_memory=500, discount=.99):
+    def __init__(self, max_memory=50, discount=.99):
         self.max_memory = max_memory
         self.memory = list()
         self.discount = discount
@@ -38,7 +38,7 @@ class Memory(object):
         env_dim = self.memory[0][0][0].shape[1]
         inputs = np.zeros((batch_size, TIMESTEPS, env_dim))
         targets = np.zeros((inputs.shape[0], num_actions))
-        state_t, action_t, reward_t, state_tp1 = self.memory[len_memory - TIMESTEPS][0]
+        state_t, action_t, reward_t, state_tp1 = self.memory[len_memory][0]
 
         inputs[0] = state_t
         # Make time-sequence

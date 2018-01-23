@@ -7,7 +7,7 @@ from keras.optimizers import sgd
 
 
 class Memory(object):
-	def __init__(self, max_memory=500, discount=.99):
+	def __init__(self, max_memory=100, discount=.99):
 		self.max_memory = max_memory
 		self.memory = list()
 		self.discount = discount
