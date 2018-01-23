@@ -19,7 +19,7 @@ wall_offset = 60
 wall_width = 20
 GAME_WIDTH = SCREEN_WIDTH - (wall_offset + wall_width) * 2
 GAME_HEIGHT = SCREEN_HEIGHT - (wall_offset + wall_width) * 2
-EXTRA_LAYERS = 2
+EXTRA_LAYERS = 1
 collision_types = {
     "player": 1,
     "bullet": 2,
@@ -399,7 +399,7 @@ def main():
             agent.model.load_weights(name)
         agents.append(agent)
 
-    epochs = 10
+    epochs = 100
     fps = 25
     game_length = fps * 15
     rewards = np.zeros(epochs * game_length)

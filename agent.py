@@ -33,7 +33,7 @@ class Memory(object):
 			targets[i] = model.predict(state_t)[0]
 			Q_sa = np.max(model.predict(state_tp1)[0])
 			# reward_t + gamma * max_a' Q(s', a')
-			targets[i, action_t] = reward_t + self.discount * Q_sa
+			targets[i, action_t] = reward_t + self.discount * Q_sa - np.max(targets[i])
 		return inputs, targets
 
 
@@ -58,7 +58,7 @@ class SelfLearningAgent(object):
 		if np.random.rand() <= epsilon:
 			action = np.random.randint(0, self.num_actions, size=1)[0]
 		else:
-			q = self.model.predict(input_data)[0]
+			q = self.model.predict(input_data, batch_size=self.input_size)[0]
 			action = np.argmax(q)
 		return action
 		#q_values = self.model.predict(input_data)[0]
