@@ -1,9 +1,9 @@
 import sys
 import os
+from pandas import DataFrame
 os.environ["CUDA_VISIBLE_DEVICES"]="-1"
 import numpy as np
 import pygame
-import json
 from pygame.locals import *
 from pygame.color import *
 import random
@@ -14,11 +14,10 @@ from pymunk.vec2d import Vec2d
 import pymunk.pygame_util
 import matplotlib.pyplot as plt
 import os.path
-import time
 
 """ GAME OPTIONS """
 total_players = 2
-epochs = 100
+epochs = 5
 fps = 25
 game_length = fps * 20
 display_frame = True
@@ -75,6 +74,8 @@ class Player(pymunk.Body):
         self.old_score = 0
         self.shot_bullets = 0
         self.hit_bullets = 0
+        self.touch_points = 0
+        self.old_touch_points = 0
         self.shoot_cooldown = 0
         self.last_action = None
         self.radius = radius
@@ -102,7 +103,8 @@ class Player(pymunk.Body):
         space.add(self, self.shape)
 
     def get_reward(self):
-        return self.score - self.old_score
+        punishment = 0.01 * (self.touch_points - self.old_touch_points)
+        return self.score - self.old_score - punishment
 
     def hurt(self):
         self.score -= 1
@@ -112,9 +114,10 @@ class Player(pymunk.Body):
         self.hit_bullets += 1
 
     def touch_player(self):
-        self.score -= 0.01
+        self.touch_points += 1
 
     def act(self, action):
+        self.old_touch_points = self.touch_points
         self.old_score = self.score
         self.last_action = action
         return self.update_state(action)
@@ -326,6 +329,8 @@ class Game(object):
                 if player.shape == player1_shape or player.shape == player2_shape:
                     player.touch_player()
 
+            return True
+
         k = self.space.add_collision_handler(collision_types["player"], collision_types["player"])
         k.pre_solve = process_players_hit
 
@@ -530,15 +535,24 @@ def main():
 
     print("Total wins per player:")
     print(players_won)
-    for i in range(total_players):
-        print("Player " + str(i + 1) + "win history: ")
-        print(player_won_history[i])
+    # for i in range(total_players):
+    #     print("Player " + str(i + 1) + "win history: ")
+    #     print(player_won_history[i])
 
     x = range(0, epochs * game_length)
     plt.plot(x, rewards)
     # axes = plt.gca()
     # axes.set_ylim([0, grid_size*3])
     plt.show()
+
+    # Save results to excel file.
+    df = DataFrame(data=player_won_history)
+    df = df.T
+    i = 1
+    excel_name = 'game_results'
+    while os.path.isfile(excel_name + str(i) + '.xlsx'):
+        i += 1
+    df.to_excel(excel_name + str(i) + '.xlsx', index=False)
 
     # Save trained model weights and architecture, this will be used by the visualization code
     i = 0

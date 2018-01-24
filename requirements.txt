@@ -9,3 +9,5 @@ pymunk
 matplotlib
 h5py
 theano
+pandas
+openpyxl
