@@ -51,7 +51,7 @@ class SelfLearningAgent(object):
 		self.model = Sequential()
 		self.model.add(Dense(self.hidden_size, input_shape=(self.input_size, ), activation='sigmoid'))
 		self.model.add(Dense(self.num_actions, activation='linear'))
-		self.model.compile(optimizer=sgd(lr=0.1), loss="mse")
+		self.model.compile(optimizer=sgd(lr=1e-03), loss="mse")
 		self.memory = Memory()
 
 	def predict_action(self, input_data, epsilon=.1):

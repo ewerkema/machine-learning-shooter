@@ -1,5 +1,6 @@
 import sys
-
+import os
+os.environ["CUDA_VISIBLE_DEVICES"]="-1"
 import numpy as np
 import pygame
 import json
@@ -16,11 +17,12 @@ import os.path
 import time
 
 SCREEN_WIDTH, SCREEN_HEIGHT = 1000, 800
-wall_offset = 60
+wall_offset = 100
 wall_width = 20
 GAME_WIDTH = SCREEN_WIDTH - (wall_offset + wall_width) * 2
 GAME_HEIGHT = SCREEN_HEIGHT - (wall_offset + wall_width) * 2
 EXTRA_LAYERS = 1
+DATA_PER_PLAYER = 4
 collision_types = {
     "player": 1,
     "bullet": 2,
@@ -305,33 +307,41 @@ class Game(object):
         return True
 
     def get_data(self):
-        width = normalize_coordinate(GAME_WIDTH)
-        height = normalize_coordinate(GAME_HEIGHT)
-        offset = wall_width + wall_offset
-        data = np.zeros((EXTRA_LAYERS+self.total_players, width, height))
+        # width = normalize_coordinate(GAME_WIDTH)
+        # height = normalize_coordinate(GAME_HEIGHT)
+        # offset = wall_width + wall_offset
+        # data = np.zeros((EXTRA_LAYERS+self.total_players, width, height))
+        # for player in self.players:
+        #     index = int(player.index-1)
+        #     x = normalize_coordinate(player.position.x - offset - player.radius)
+        #     y = normalize_coordinate(player.position.y - offset - player.radius)
+        #     data[index, x, y] = 1
+        #     shootX = min(width-1, max(0, x + int(round(np.cos(player.angle)))))
+        #     shootY = min(height-1, max(0, y + int(round(np.sin(player.angle)))))
+        #     data[index, shootX, shootY] = 0.5
+        #     for bullet in self.bullets:
+        #         x = normalize_coordinate(bullet.position.x - offset)
+        #         y = normalize_coordinate(bullet.position.y - offset)
+        #         data[self.total_players, x, y] = 1
+        data = np.zeros(self.total_players * DATA_PER_PLAYER)
+        i = 0
         for player in self.players:
-            index = int(player.index-1)
-            x = normalize_coordinate(player.position.x - offset - player.radius)
-            y = normalize_coordinate(player.position.y - offset - player.radius)
-            data[index, x, y] = 1
-            shootX = min(width-1, max(0, x + int(round(np.cos(player.angle)))))
-            shootY = min(height-1, max(0, y + int(round(np.sin(player.angle)))))
-            data[index, shootX, shootY] = 0.5
-            # for other in self.players:
-            #     if player.index is not other.index:
-            #         line = Line(player, other)
-            #         data[i + 3] = 0
-            #         data[i + 4] = line.distance_score(500) / 500
+            for other in self.players:
+                if player.index is not other.index:
+                    line = Line(player, other)
+                    if line.destination_in_front():
+                        data[i] = line.distance_score(other.radius) > 0
+                        data[i + 1] = line.distance_score(1000) / 1000
+                    else:
+                        data[i + 2] = 1
             for bullet in self.bullets:
-                x = normalize_coordinate(bullet.position.x - offset)
-                y = normalize_coordinate(bullet.position.y - offset)
-                data[self.total_players, x, y] = 1
-                # line = Line(bullet, player)
-                # if line.destination_in_front() and line.distance_from_line() <= player.radius:
-                #     data[i + 5] = 1
+                line = Line(bullet, player)
+                if line.destination_in_front() and line.distance_from_line() <= player.radius:
+                    data[i + 3] = 1
+            i += DATA_PER_PLAYER
         return data.reshape((1, -1))
 
-    def display_frame(self, screen, q1, q2, epoch):
+    def display_frame(self, screen, input_data, epoch, q0, q1):
         """ Display everything to the screen for the game. """
         screen.fill(pygame.color.THECOLORS["black"])
         font = pygame.font.SysFont("Arial", 16)
@@ -375,9 +385,9 @@ class Game(object):
                     round(player.position.x)) + ', ' + str(round(player.position.y)) + '); '
                 i += 1
             screen.blit(font.render("Scores= " + scores + " Epoch = " + str(epoch), 1, THECOLORS["white"]), (0, 0))
-            screen.blit(
-                font.render("Player 1: " + str(q1[0:5]) + ", Player 2: " + str(q2[0:5]), 1, THECOLORS["darkgrey"]),
-                (5, SCREEN_HEIGHT - 35))
+            screen.blit(font.render("Q1=" + str(q0), 1, THECOLORS["darkgrey"]), (5, SCREEN_HEIGHT - 65))
+            screen.blit(font.render("Q2=" + str(q1), 1, THECOLORS["darkgrey"]), (5, SCREEN_HEIGHT - 50))
+            screen.blit(font.render("Data=" + str(input_data), 1, THECOLORS["darkgrey"]), (5, SCREEN_HEIGHT - 35))
             screen.blit(font.render("Press ESC or Q to quit", 1, THECOLORS["darkgrey"]), (5, SCREEN_HEIGHT - 20))
 
         pygame.display.flip()
@@ -398,29 +408,25 @@ def main():
     # Create model learning
     total_players = 2
     agents = []
-    width = normalize_coordinate(GAME_WIDTH)
-    height = normalize_coordinate(GAME_HEIGHT)
     for x in range(total_players):
         name = "model_player_" + str(x) + ".h5"
-        hidden_size = 150
-        input_size = (EXTRA_LAYERS + total_players) * width * height
-        if x == 0:
-            agent = agentLSTM.SelfLearningAgent(input_size, hidden_size)
-        else:
-            agent = agentFF.SelfLearningAgent(input_size, hidden_size)
+        hidden_size = 150 if x == 0 else 50
+        input_size = DATA_PER_PLAYER * total_players
+        agent = agentFF.SelfLearningAgent(input_size, hidden_size)
         if os.path.isfile(name):
             print("Model is loaded for agent" + str(x))
             agent.model.load_weights(name)
         agents.append(agent)
 
-    epochs = 100
+    epochs = 1000
     fps = 25
-    game_length = fps * 15
+    game_length = fps * 20
     rewards = np.zeros(epochs * game_length)
     players_won = np.zeros(total_players)
     player_won_history = np.zeros((total_players, epochs))
 
     for epoch in range(epochs):
+        print("Running epoch " + str(epoch) + "...")
         # Main game loop
         game = Game(total_players)
         for agent in agents:
@@ -445,12 +451,10 @@ def main():
                 i += 1
 
             # Draw the current frame
-            game.display_frame(screen, [0,0,0,0,0], agents[1].model.predict(before_data)[0],
-                               epoch)
+            # game.display_frame(screen, before_data, epoch, agents[0].model.predict(before_data)[0], agents[1].model.predict(before_data)[0])
 
             # Update frame and physics
             game.update_physics(fps)
-            clock.tick(fps)
 
             after_data = game.get_data()
             i = 0

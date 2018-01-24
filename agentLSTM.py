@@ -69,7 +69,7 @@ class SelfLearningAgent(object):
         self.model.add(LSTM(self.hidden_size, return_sequences=True, input_shape=(TIMESTEPS, self.input_size)))
         self.model.add(LSTM(self.hidden_size, return_sequences=False))
         self.model.add(Dense(self.num_actions, activation='linear'))
-        self.model.compile(optimizer=sgd(lr=1e-01), loss="mse")
+        self.model.compile(optimizer=sgd(lr=1e-03), loss="mse")
         self.memory = Memory()
 
     def predict_action(self, input_data, epsilon=.1):
