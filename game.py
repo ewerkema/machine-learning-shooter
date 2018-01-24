@@ -16,6 +16,27 @@ import matplotlib.pyplot as plt
 import os.path
 import time
 
+""" GAME OPTIONS """
+total_players = 2
+epochs = 100
+fps = 25
+game_length = fps * 20
+display_frame = True
+use_grid = False
+players = [
+    {
+        "feedforward": True,
+        "random": False,
+        "hidden_size": 50,
+    },
+    {
+        "feedforward": False,
+        "random": False,
+        "hidden_size": 50,
+    }
+]
+""" END GAME OPTIONS"""
+
 SCREEN_WIDTH, SCREEN_HEIGHT = 1000, 800
 wall_offset = 100
 wall_width = 20
@@ -72,8 +93,7 @@ class Player(pymunk.Body):
             self.offset["ymin"] + random.randint(0, self.offset["ymax"] - self.offset["ymin"])
         )
         self.angle = random.randint(0, 360)
-
-        self.shape = pymunk.Circle(self, radius)
+        self.shape = pymunk.Circle(self, radius, (0, 0))
         self.shape.color = THECOLORS[player_color]
         self.shape.sensor = True
         self.shape.elasticity = 1.0
@@ -81,17 +101,8 @@ class Player(pymunk.Body):
 
         space.add(self, self.shape)
 
-    def get_reward(self, all_players):
-        bonus_fraction = .1
-        bonus_score = 0
-        for other in all_players:
-            if self.index is not other.index:
-                line = Line(self, other)
-                if line.destination_in_front():
-                    bonus_score += line.distance_score(500) / 500
-        bonus_score = bonus_score / (len(all_players) - 1)
-        total_score = (1 - bonus_fraction) * (self.score - self.old_score) + bonus_fraction * bonus_score
-        return total_score
+    def get_reward(self):
+        return self.score - self.old_score
 
     def hurt(self):
         self.score -= 1
@@ -145,10 +156,10 @@ class Player(pymunk.Body):
         )
 
     def rotate_left(self):
-        self.angle += (self.speed * 2 / 100)
+        self.angle += self.speed * np.pi / 180
 
     def rotate_right(self):
-        self.angle -= (self.speed * 2 / 100)
+        self.angle -= self.speed * np.pi / 180
 
     def shoot(self):
         if self.shoot_cooldown <= 0:
@@ -190,17 +201,35 @@ class Line:
         in_front = np.dot(AB, normA) > 0
         return in_front
 
+    def rotated_angle(self, angle):
+        angle = angle / 180 * np.pi
+        A = self.destination.position - self.origin.position
+        B = (np.cos(self.origin.angle + angle), np.sin(self.origin.angle + angle))
+        return np.arccos(np.dot(A, B) / np.linalg.norm(A))
+
+    def angle_score(self, angle):
+        max_value = np.pi
+        return (max_value - self.rotated_angle(angle)) / max_value
+
     def distance_from_line(self):
-        a = np.tan(self.origin.angle)
+        return self.distance_from_rotated_line(0)
+
+    def distance_from_rotated_line(self, angle):
+        angle = angle / 180 * np.pi
+        a = np.tan(self.origin.angle + angle)
         b = -1
         c = self.origin.position.y - a * self.origin.position.x
-        distance_from_line = np.abs(a * self.destination.position.x + b * self.destination.position.y + c) / np.sqrt(a * a + b * b)
+        distance_from_line = np.abs(a * self.destination.position.x + b * self.destination.position.y + c) / np.sqrt(
+            a * a + b * b)
         return distance_from_line
 
-    def distance_score(self, min_distance=1000):
-        distance_to_shooting_line = self.distance_from_line()
+    def distance_score(self, min_distance=500):
+        return self.distance_rotated_score(0, min_distance)
+
+    def distance_rotated_score(self, angle, min_distance=500):
+        distance_to_shooting_line = self.distance_from_rotated_line(angle)
         if self.destination_in_front() and distance_to_shooting_line < min_distance:
-            return min_distance - distance_to_shooting_line
+            return (min_distance - distance_to_shooting_line) / min_distance
         return 0
 
 
@@ -306,23 +335,26 @@ class Game(object):
                 return False
         return True
 
+    def get_grid(self):
+        width = normalize_coordinate(GAME_WIDTH)
+        height = normalize_coordinate(GAME_HEIGHT)
+        offset = wall_width + wall_offset
+        data = np.zeros((EXTRA_LAYERS+self.total_players, width, height))
+        for player in self.players:
+            index = int(player.index-1)
+            x = normalize_coordinate(player.position.x - offset - player.radius)
+            y = normalize_coordinate(player.position.y - offset - player.radius)
+            data[index, x, y] = 1
+            shootX = min(width-1, max(0, x + int(round(np.cos(player.angle)))))
+            shootY = min(height-1, max(0, y + int(round(np.sin(player.angle)))))
+            data[index, shootX, shootY] = 0.5
+            for bullet in self.bullets:
+                x = normalize_coordinate(bullet.position.x - offset)
+                y = normalize_coordinate(bullet.position.y - offset)
+                data[self.total_players, x, y] = 1
+        return data.reshape((1, -1))
+
     def get_data(self):
-        # width = normalize_coordinate(GAME_WIDTH)
-        # height = normalize_coordinate(GAME_HEIGHT)
-        # offset = wall_width + wall_offset
-        # data = np.zeros((EXTRA_LAYERS+self.total_players, width, height))
-        # for player in self.players:
-        #     index = int(player.index-1)
-        #     x = normalize_coordinate(player.position.x - offset - player.radius)
-        #     y = normalize_coordinate(player.position.y - offset - player.radius)
-        #     data[index, x, y] = 1
-        #     shootX = min(width-1, max(0, x + int(round(np.cos(player.angle)))))
-        #     shootY = min(height-1, max(0, y + int(round(np.sin(player.angle)))))
-        #     data[index, shootX, shootY] = 0.5
-        #     for bullet in self.bullets:
-        #         x = normalize_coordinate(bullet.position.x - offset)
-        #         y = normalize_coordinate(bullet.position.y - offset)
-        #         data[self.total_players, x, y] = 1
         data = np.zeros(self.total_players * DATA_PER_PLAYER)
         i = 0
         for player in self.players:
@@ -331,9 +363,11 @@ class Game(object):
                     line = Line(player, other)
                     if line.destination_in_front():
                         data[i] = line.distance_score(other.radius) > 0
-                        data[i + 1] = line.distance_score(1000) / 1000
-                    else:
-                        data[i + 2] = 1
+                    left_score = line.angle_score(10)
+                    right_score = line.angle_score(-10)
+                    go_left = left_score > right_score
+                    data[i + 1] = go_left
+                    data[i + 2] = line.angle_score(0)
             for bullet in self.bullets:
                 line = Line(bullet, player)
                 if line.destination_in_front() and line.distance_from_line() <= player.radius:
@@ -341,7 +375,7 @@ class Game(object):
             i += DATA_PER_PLAYER
         return data.reshape((1, -1))
 
-    def display_frame(self, screen, input_data, epoch, q0, q1):
+    def display_frame(self, screen, input_data, epoch):
         """ Display everything to the screen for the game. """
         screen.fill(pygame.color.THECOLORS["black"])
         font = pygame.font.SysFont("Arial", 16)
@@ -382,11 +416,11 @@ class Game(object):
             i = 1
             for player in self.players:
                 scores += 'Player ' + str(i) + ': ' + str(player.score) + ' ( ' + str(
-                    round(player.position.x)) + ', ' + str(round(player.position.y)) + '); '
+                    round(player.position.x)) + ', ' + str(round(player.position.y)) + '); action= ' + str(player.last_action)+ '; '
                 i += 1
             screen.blit(font.render("Scores= " + scores + " Epoch = " + str(epoch), 1, THECOLORS["white"]), (0, 0))
-            screen.blit(font.render("Q1=" + str(q0), 1, THECOLORS["darkgrey"]), (5, SCREEN_HEIGHT - 65))
-            screen.blit(font.render("Q2=" + str(q1), 1, THECOLORS["darkgrey"]), (5, SCREEN_HEIGHT - 50))
+            # screen.blit(font.render("Q1=" + str(q0), 1, THECOLORS["darkgrey"]), (5, SCREEN_HEIGHT - 65))
+            # screen.blit(font.render("Q2=" + str(q1), 1, THECOLORS["darkgrey"]), (5, SCREEN_HEIGHT - 50))
             screen.blit(font.render("Data=" + str(input_data), 1, THECOLORS["darkgrey"]), (5, SCREEN_HEIGHT - 35))
             screen.blit(font.render("Press ESC or Q to quit", 1, THECOLORS["darkgrey"]), (5, SCREEN_HEIGHT - 20))
 
@@ -403,24 +437,25 @@ def main():
     size = [SCREEN_WIDTH, SCREEN_HEIGHT]
     screen = pygame.display.set_mode(size)
 
-    clock = pygame.time.Clock()
+    if len(players) < total_players:
+        sys.exit("Not enough player information was provided, " + str(total_players) + " players are needed.")
 
     # Create model learning
-    total_players = 2
+    width = normalize_coordinate(GAME_WIDTH)
+    height = normalize_coordinate(GAME_HEIGHT)
     agents = []
     for x in range(total_players):
         name = "model_player_" + str(x) + ".h5"
-        hidden_size = 150 if x == 0 else 50
-        input_size = DATA_PER_PLAYER * total_players
-        agent = agentFF.SelfLearningAgent(input_size, hidden_size)
+        input_size = ((EXTRA_LAYERS+total_players) * width * height) if use_grid else (DATA_PER_PLAYER * total_players)
+        if players[x]["feedforward"]:
+            agent = agentFF.SelfLearningAgent(input_size, hidden_size=players[x]["hidden_size"])
+        else:
+            agent = agentLSTM.SelfLearningAgent(input_size, hidden_size=players[x]["hidden_size"])
         if os.path.isfile(name):
             print("Model is loaded for agent" + str(x))
             agent.model.load_weights(name)
         agents.append(agent)
 
-    epochs = 1000
-    fps = 25
-    game_length = fps * 20
     rewards = np.zeros(epochs * game_length)
     players_won = np.zeros(total_players)
     player_won_history = np.zeros((total_players, epochs))
@@ -438,28 +473,29 @@ def main():
                 break
 
             # Update players based on model
-            before_data = game.get_data()
+            before_data = game.get_grid() if use_grid else game.get_data()
             i = 0
             for player in game.players:
                 if DEBUG and player.index is not i + 1:
                     print("Incorrect agent loaded for player!!!!")
-                # epsilon = 1 if player.index == 1 else .1
-                action = agents[i].predict_action(before_data)
+                epsilon = 1 if players[i]["random"] else .1
+                action = agents[i].predict_action(before_data, epsilon)
                 maybe_bullet = player.act(action)
                 if maybe_bullet is not False:
                     game.bullets.append(maybe_bullet)
                 i += 1
 
             # Draw the current frame
-            # game.display_frame(screen, before_data, epoch, agents[0].model.predict(before_data)[0], agents[1].model.predict(before_data)[0])
+            if display_frame:
+                game.display_frame(screen, game.get_data(), epoch)
 
             # Update frame and physics
             game.update_physics(fps)
 
-            after_data = game.get_data()
+            after_data = game.get_grid() if use_grid else game.get_data()
             i = 0
             for player in game.players:
-                reward = player.get_reward(game.players)
+                reward = player.get_reward()
                 loss = agents[i].get_new_state(before_data, player.last_action, reward, after_data)
                 rewards[(epoch * game_length) + x] = loss
                 i += 1
