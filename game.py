@@ -17,7 +17,7 @@ import os.path
 
 """ GAME OPTIONS """
 total_players = 2
-epochs = 5
+epochs = 1000
 fps = 25
 game_length = fps * 20
 display_frame = True
@@ -29,7 +29,7 @@ players = [
         "hidden_size": 50,
     },
     {
-        "feedforward": True,
+        "feedforward": False,
         "random": False,
         "hidden_size": 50,
     }
@@ -74,8 +74,6 @@ class Player(pymunk.Body):
         self.old_score = 0
         self.shot_bullets = 0
         self.hit_bullets = 0
-        self.touch_points = 0
-        self.old_touch_points = 0
         self.shoot_cooldown = 0
         self.last_action = None
         self.radius = radius
@@ -103,8 +101,7 @@ class Player(pymunk.Body):
         space.add(self, self.shape)
 
     def get_reward(self):
-        punishment = 0.01 * (self.touch_points - self.old_touch_points)
-        return self.score - self.old_score - punishment
+        return self.score - self.old_score
 
     def hurt(self):
         self.score -= 1
@@ -114,10 +111,9 @@ class Player(pymunk.Body):
         self.hit_bullets += 1
 
     def touch_player(self):
-        self.touch_points += 1
+        return
 
     def act(self, action):
-        self.old_touch_points = self.touch_points
         self.old_score = self.score
         self.last_action = action
         return self.update_state(action)
@@ -382,11 +378,11 @@ class Game(object):
                     line = Line(player, other)
                     if line.destination_in_front():
                         data[i] = line.distance_score(other.radius) > 0
-                    left_score = line.angle_score(10)
-                    right_score = line.angle_score(-10)
+                    left_score = line.distance_rotated_score(2, 1000)
+                    right_score = line.distance_rotated_score(-2, 1000)
                     go_left = left_score > right_score
                     data[i + 1] = go_left
-                    data[i + 2] = line.angle_score(0)
+                    data[i + 2] = line.distance_score()
             for bullet in self.bullets:
                 line = Line(bullet, player)
                 if line.destination_in_front() and line.distance_from_line() <= player.radius:
@@ -394,7 +390,7 @@ class Game(object):
             i += DATA_PER_PLAYER
         return data.reshape((1, -1))
 
-    def display_frame(self, screen, input_data, epoch):
+    def display_frame(self, screen, input_data, epoch, q0, q1):
         """ Display everything to the screen for the game. """
         screen.fill(pygame.color.THECOLORS["black"])
         font = pygame.font.SysFont("Arial", 16)
@@ -438,8 +434,8 @@ class Game(object):
                     round(player.position.x)) + ', ' + str(round(player.position.y)) + '); action= ' + str(player.last_action)+ '; '
                 i += 1
             screen.blit(font.render("Scores= " + scores + " Epoch = " + str(epoch), 1, THECOLORS["white"]), (0, 0))
-            # screen.blit(font.render("Q1=" + str(q0), 1, THECOLORS["darkgrey"]), (5, SCREEN_HEIGHT - 65))
-            # screen.blit(font.render("Q2=" + str(q1), 1, THECOLORS["darkgrey"]), (5, SCREEN_HEIGHT - 50))
+            screen.blit(font.render("Q1=" + str(q0), 1, THECOLORS["darkgrey"]), (5, SCREEN_HEIGHT - 65))
+            screen.blit(font.render("Q2=" + str(q1), 1, THECOLORS["darkgrey"]), (5, SCREEN_HEIGHT - 50))
             screen.blit(font.render("Data=" + str(input_data), 1, THECOLORS["darkgrey"]), (5, SCREEN_HEIGHT - 35))
             screen.blit(font.render("Press ESC or Q to quit", 1, THECOLORS["darkgrey"]), (5, SCREEN_HEIGHT - 20))
 
@@ -506,7 +502,7 @@ def main():
 
             # Draw the current frame
             if display_frame:
-                game.display_frame(screen, game.get_data(), epoch)
+                game.display_frame(screen, game.get_data(), epoch, agents[0].model.predict(before_data)[0], [])
 
             # Update frame and physics
             game.update_physics(fps)
