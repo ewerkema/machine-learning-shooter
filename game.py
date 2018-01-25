@@ -418,7 +418,7 @@ def main():
             agent.model.load_weights(name)
         agents.append(agent)
 
-    epochs = 1000
+    epochs = 100
     fps = 25
     game_length = fps * 20
     rewards = np.zeros(epochs * game_length)
@@ -451,7 +451,7 @@ def main():
                 i += 1
 
             # Draw the current frame
-            # game.display_frame(screen, before_data, epoch, agents[0].model.predict(before_data)[0], agents[1].model.predict(before_data)[0])
+            game.display_frame(screen, before_data, epoch, agents[0].model.predict(before_data)[0], agents[1].model.predict(before_data)[0])
 
             # Update frame and physics
             game.update_physics(fps)
