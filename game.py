@@ -17,7 +17,7 @@ import os.path
 
 """ GAME OPTIONS """
 total_players = 2
-epochs = 100
+epochs = 1000
 fps = 25
 game_length = fps * 20
 display_frame = True
@@ -230,7 +230,7 @@ class Line:
 
     def distance_rotated_score(self, angle, min_distance=500):
         distance_to_shooting_line = self.distance_from_rotated_line(angle)
-        if distance_to_shooting_line < min_distance:
+        if self.destination_in_front() and distance_to_shooting_line < min_distance:
             return (min_distance - distance_to_shooting_line) / min_distance
         return 0
 
@@ -378,8 +378,8 @@ class Game(object):
                     line = Line(player, other)
                     if line.destination_in_front():
                         data[i] = line.distance_score(other.radius) > 0
-                    left_score = line.distance_rotated_score(10)
-                    right_score = line.distance_rotated_score(-10)
+                    left_score = line.distance_rotated_score(2, 1000)
+                    right_score = line.distance_rotated_score(-2, 1000)
                     go_left = left_score > right_score
                     data[i + 1] = go_left
                     data[i + 2] = line.distance_score()
