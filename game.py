@@ -1,7 +1,6 @@
 import sys
 import os
 from pandas import DataFrame
-os.environ["CUDA_VISIBLE_DEVICES"]="-1"
 import numpy as np
 import pygame
 from pygame.locals import *
@@ -17,7 +16,7 @@ import os.path
 
 """ GAME OPTIONS """
 total_players = 2
-epochs = 100
+epochs = 10
 fps = 25
 game_length = fps * 20
 display_frame = True
@@ -29,8 +28,8 @@ players = [
         "hidden_size": 50,
     },
     {
-        "feedforward": False,
-        "random": False,
+        "feedforward": True,
+        "random": True,
         "hidden_size": 50,
     }
 ]
@@ -378,11 +377,11 @@ class Game(object):
                     line = Line(player, other)
                     if line.destination_in_front():
                         data[i] = line.distance_score(other.radius) > 0
-                    left_score = line.distance_rotated_score(10)
-                    right_score = line.distance_rotated_score(-10)
+                    left_score = line.angle_score(10)
+                    right_score = line.angle_score(-10)
                     go_left = left_score > right_score
                     data[i + 1] = go_left
-                    data[i + 2] = line.distance_score()
+                    data[i + 2] = line.angle_score(0)
             for bullet in self.bullets:
                 line = Line(bullet, player)
                 if line.destination_in_front() and line.distance_from_line() <= player.radius:
