@@ -76,7 +76,7 @@ class SelfLearningAgent(object):
         if np.random.rand() <= epsilon or len(self.memory.memory) < TIMESTEPS:
             action = np.random.randint(0, self.num_actions, size=1)[0]
         else:
-            input_data = self.memory.get_time_seq(False)
+            input_data = self.memory.get_time_seq(False);
             q = self.model.predict(input_data, batch_size=self.input_size)[0]
             # Probability for Q values
             actions = [0, 1, 2, 3, 4]
