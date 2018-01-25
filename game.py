@@ -30,7 +30,7 @@ players = [
         "hidden_size": 50,
     },
     {
-        "feedforward": True,
+        "feedforward": False,
         "random": False,
         "hidden_size": 50,
     }
@@ -110,9 +110,6 @@ class Player(pymunk.Body):
     def hit(self):
         self.score += 1
         self.hit_bullets += 1
-
-    def touch_player(self):
-        self.score -= 0.01
 
     def act(self, action):
         self.old_score = self.score
@@ -317,17 +314,6 @@ class Game(object):
 
         g = self.space.add_collision_handler(collision_types["bullet"], collision_types["player"])
         g.pre_solve = process_bullet_hit
-
-        def process_players_hit(arbiter, space, data):
-            player1_shape = arbiter.shapes[0]
-            player2_shape = arbiter.shapes[1]
-
-            for player in self.players:
-                if player.shape == player1_shape or player.shape == player2_shape:
-                    player.touch_player()
-
-        k = self.space.add_collision_handler(collision_types["player"], collision_types["player"])
-        k.pre_solve = process_players_hit
 
     def run_logic(self):
         """
