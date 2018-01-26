@@ -10,6 +10,9 @@ class Memory(object):
 		self.memory = list()
 		self.discount = discount
 
+	def clear(self):
+		self.memory = list()
+
 	def remember(self, states):
 		# memory[i] = [[state_t, action_t, reward_t, state_t+1], game_over?]
 		self.memory.append([states])

@@ -1,237 +1,12 @@
-import sys
-import os
-from pandas import DataFrame
 import numpy as np
 import pygame
+from pygame.color import THECOLORS
 from pygame.locals import *
-from pygame.color import *
-import random
-import agent as agentFF
-import agentLSTM
 import pymunk
-from pymunk.vec2d import Vec2d
 import pymunk.pygame_util
-import matplotlib.pyplot as plt
-import os.path
-
-""" GAME OPTIONS """
-total_players = 2
-epochs = 10
-fps = 25
-game_length = fps * 20
-display_frame = True
-use_grid = False
-players = [
-    {
-        "feedforward": True,
-        "random": False,
-        "hidden_size": 50,
-    },
-    {
-        "feedforward": True,
-        "random": True,
-        "hidden_size": 50,
-    }
-]
-""" END GAME OPTIONS"""
-
-SCREEN_WIDTH, SCREEN_HEIGHT = 1000, 800
-wall_offset = 100
-wall_width = 20
-GAME_WIDTH = SCREEN_WIDTH - (wall_offset + wall_width) * 2
-GAME_HEIGHT = SCREEN_HEIGHT - (wall_offset + wall_width) * 2
-EXTRA_LAYERS = 1
-DATA_PER_PLAYER = 4
-collision_types = {
-    "player": 1,
-    "bullet": 2,
-    "wall": 3,
-}
-FORWARD = 0
-BACKWARD = 1
-ROTATE_LEFT = 2
-ROTATE_RIGHT = 3
-SHOOT = 4
-PLAYER_ITERATOR = 1
-DEBUG = True
-
-
-def increment_player_iterator():
-    global PLAYER_ITERATOR
-    PLAYER_ITERATOR += 1
-
-
-def normalize_coordinate(value):
-    return int(np.floor(value / 40))
-
-
-class Player(pymunk.Body):
-
-    def __init__(self, space, radius=15, player_color="red", speed=3):
-        super().__init__()
-        self.score = 0
-        self.old_score = 0
-        self.shot_bullets = 0
-        self.hit_bullets = 0
-        self.shoot_cooldown = 0
-        self.last_action = None
-        self.radius = radius
-        self.index = PLAYER_ITERATOR
-        increment_player_iterator()
-        self.offset = {
-            "xmin": wall_offset + wall_width + radius,
-            "xmax": SCREEN_WIDTH - wall_offset - wall_width - radius,
-            "ymin": wall_offset + wall_width + radius,
-            "ymax": SCREEN_HEIGHT - wall_offset - wall_width - radius
-        }
-        self.speed = speed
-        self.body_type = pymunk.Body.KINEMATIC
-        self.position = (
-            self.offset["xmin"] + random.randint(0, self.offset["xmax"] - self.offset["xmin"]),
-            self.offset["ymin"] + random.randint(0, self.offset["ymax"] - self.offset["ymin"])
-        )
-        self.angle = random.randint(0, 360)
-        self.shape = pymunk.Circle(self, radius, (0, 0))
-        self.shape.color = THECOLORS[player_color]
-        self.shape.sensor = True
-        self.shape.elasticity = 1.0
-        self.shape.collision_type = collision_types["player"]
-
-        space.add(self, self.shape)
-
-    def get_reward(self):
-        return self.score - self.old_score
-
-    def hurt(self):
-        self.score -= 1
-
-    def hit(self):
-        self.score += 1
-        self.hit_bullets += 1
-
-    def touch_player(self):
-        return
-
-    def act(self, action):
-        self.old_score = self.score
-        self.last_action = action
-        return self.update_state(action)
-
-    def handle_keys(self):
-        keys = pygame.key.get_pressed()
-        if keys[K_UP]:
-            self.forward()
-        elif keys[K_DOWN]:
-            self.backward()
-        if keys[K_LEFT]:
-            self.rotate_left()
-        elif keys[K_RIGHT]:
-            self.rotate_right()
-
-    def update_state(self, action):
-        self.shoot_cooldown -= 1
-        if action == FORWARD:
-            self.forward()
-        elif action == BACKWARD:
-            self.backward()
-        elif action == ROTATE_LEFT:
-            self.rotate_left()
-        elif action == ROTATE_RIGHT:
-            self.rotate_right()
-        elif action == SHOOT:
-            bullet = self.shoot()
-            return bullet
-
-        return False
-
-    def forward(self):
-        self.position = (
-            max(self.offset["xmin"], min(self.offset["xmax"], self.position.x + np.cos(self.angle) * self.speed)),
-            max(self.offset["ymin"], min(self.offset["ymax"], self.position.y + np.sin(self.angle) * self.speed))
-        )
-
-    def backward(self):
-        self.position = (
-            max(self.offset["xmin"], min(self.offset["xmax"], self.position.x - np.cos(self.angle) * self.speed)),
-            max(self.offset["ymin"], min(self.offset["ymax"], self.position.y - np.sin(self.angle) * self.speed))
-        )
-
-    def rotate_left(self):
-        self.angle += self.speed * np.pi / 180
-
-    def rotate_right(self):
-        self.angle -= self.speed * np.pi / 180
-
-    def shoot(self):
-        if self.shoot_cooldown <= 0:
-            self.shot_bullets += 1
-            self.shoot_cooldown = 10
-            return Bullet(self.space, self)
-        return False
-
-
-class Bullet(pymunk.Body):
-
-    def __init__(self, space, player, *args, **kwargs):
-        super(Bullet, self).__init__(*args, **kwargs)
-        self.mass = 1
-        self.radius = 10
-        self.power = 1000
-        self.moment = pymunk.moment_for_circle(self.mass, 0, self.radius)
-        self.shape = pymunk.Circle(self, self.radius)
-        self.shape.friction = .5
-        self.shape.collision_type = collision_types["bullet"]
-        self.player = player
-        space.add(self, self.shape)
-
-        self.position = player.position + Vec2d(player.shape.radius, 0).rotated(player.angle)
-        self.angle = player.angle
-        impulse = self.power * Vec2d(1, 0)
-        impulse.rotate(self.angle)
-        self.apply_impulse_at_world_point(impulse, player.position)
-
-
-class Line:
-    def __init__(self, origin, destination):
-        self.origin = origin
-        self.destination = destination
-
-    def destination_in_front(self):
-        AB = self.destination.position - self.origin.position
-        normA = (np.cos(self.origin.angle), np.sin(self.origin.angle))
-        in_front = np.dot(AB, normA) > 0
-        return in_front
-
-    def rotated_angle(self, angle):
-        angle = angle / 180 * np.pi
-        A = self.destination.position - self.origin.position
-        B = (np.cos(self.origin.angle + angle), np.sin(self.origin.angle + angle))
-        return np.arccos(np.dot(A, B) / np.linalg.norm(A))
-
-    def angle_score(self, angle):
-        max_value = np.pi
-        return (max_value - self.rotated_angle(angle)) / max_value
-
-    def distance_from_line(self):
-        return self.distance_from_rotated_line(0)
-
-    def distance_from_rotated_line(self, angle):
-        angle = angle / 180 * np.pi
-        a = np.tan(self.origin.angle + angle)
-        b = -1
-        c = self.origin.position.y - a * self.origin.position.x
-        distance_from_line = np.abs(a * self.destination.position.x + b * self.destination.position.y + c) / np.sqrt(
-            a * a + b * b)
-        return distance_from_line
-
-    def distance_score(self, min_distance=500):
-        return self.distance_rotated_score(0, min_distance)
-
-    def distance_rotated_score(self, angle, min_distance=500):
-        distance_to_shooting_line = self.distance_from_rotated_line(angle)
-        if distance_to_shooting_line < min_distance:
-            return (min_distance - distance_to_shooting_line) / min_distance
-        return 0
+import config
+from line import Line
+from player import Player
 
 
 class Game(object):
@@ -239,13 +14,12 @@ class Game(object):
         reset the game we'd just need to create a new instance of this
         class. """
 
-    def __init__(self, total_players):
+    def __init__(self, agents):
         """ Constructor. Create all our attributes and initialize
         the game. """
-        global PLAYER_ITERATOR
-        PLAYER_ITERATOR = 1
 
-        self.total_players = total_players
+        self.agents = agents
+        self.total_players = len(agents)
 
         self.space = pymunk.Space()
         self.game_over = False
@@ -257,9 +31,12 @@ class Game(object):
         self.players = []
 
         colors = ["red", "green", "blue", "purple", "yellow"]
-        for i in range(total_players):
-            player = Player(self.space, 50, colors[i])
+        for i in range(self.total_players):
+            player = Player(self.space, i, 50, colors[i])
             self.players.append(player)
+
+        # Initialize agents
+        self.init_agents()
 
         # Create walls
         self.create_walls()
@@ -267,23 +44,30 @@ class Game(object):
         # Create bullet collision handler
         self.init_collision_handlers()
 
+        self.before_state = False
+        self.current_state = self.get_data()
+
+    def init_agents(self):
+        for agent in self.agents:
+            agent.memory.clear()
+
     def create_walls(self):
         # walls - the left-top-right walls
-        top_left = (wall_offset, wall_offset)
-        top_right = (SCREEN_WIDTH - wall_offset, wall_offset)
-        bottom_left = (wall_offset, SCREEN_HEIGHT - wall_offset)
-        bottom_right = (SCREEN_WIDTH - wall_offset, SCREEN_HEIGHT - wall_offset)
+        top_left = (config.wall_offset, config.wall_offset)
+        top_right = (config.SCREEN_WIDTH - config.wall_offset, config.wall_offset)
+        bottom_left = (config.wall_offset, config.SCREEN_HEIGHT - config.wall_offset)
+        bottom_right = (config.SCREEN_WIDTH - config.wall_offset, config.SCREEN_HEIGHT - config.wall_offset)
         static = [
-            pymunk.Segment(self.space.static_body, top_left, top_right, wall_width),
-            pymunk.Segment(self.space.static_body, top_right, bottom_right, wall_width),
-            pymunk.Segment(self.space.static_body, bottom_right, bottom_left, wall_width),
-            pymunk.Segment(self.space.static_body, top_left, bottom_left, wall_width),
+            pymunk.Segment(self.space.static_body, top_left, top_right, config.wall_width),
+            pymunk.Segment(self.space.static_body, top_right, bottom_right, config.wall_width),
+            pymunk.Segment(self.space.static_body, bottom_right, bottom_left, config.wall_width),
+            pymunk.Segment(self.space.static_body, top_left, bottom_left, config.wall_width),
         ]
 
         for s in static:
             s.friction = 1.
             s.group = 1
-            s.collision_type = collision_types["wall"]
+            s.collision_type = config.collision_types["wall"]
 
         self.space.add(static)
 
@@ -296,7 +80,7 @@ class Game(object):
                     self.bullets.remove(bullet)
             return True
 
-        h = self.space.add_collision_handler(collision_types["bullet"], collision_types["wall"])
+        h = self.space.add_collision_handler(config.collision_types["bullet"], config.collision_types["wall"])
         h.pre_solve = remove_bullet
 
         def process_bullet_hit(arbiter, space, data):
@@ -313,7 +97,7 @@ class Game(object):
 
             return remove_bullet(arbiter, space, data)
 
-        g = self.space.add_collision_handler(collision_types["bullet"], collision_types["player"])
+        g = self.space.add_collision_handler(config.collision_types["bullet"], config.collision_types["player"])
         g.pre_solve = process_bullet_hit
 
         def process_players_hit(arbiter, space, data):
@@ -326,18 +110,21 @@ class Game(object):
 
             return True
 
-        k = self.space.add_collision_handler(collision_types["player"], collision_types["player"])
+        k = self.space.add_collision_handler(config.collision_types["player"], config.collision_types["player"])
         k.pre_solve = process_players_hit
 
-    def run_logic(self):
-        """
-        This method is run each time through the frame. It
-        updates positions and checks for collisions.
-        """
-        if not self.game_over:
-            # Handle keys of players
-            for player in self.players:
-                player.handle_keys()
+    def update_models(self):
+        for player in self.players:
+            epsilon = 1 if player.random else .1
+            action = self.agents[player.index].predict_action(self.current_state, epsilon)
+            maybe_bullet = player.act(action)
+            if maybe_bullet is not False:
+                self.bullets.append(maybe_bullet)
+
+    def train_models(self):
+        for player in self.players:
+            reward = player.get_reward()
+            loss = self.agents[player.index].get_new_state(self.before_state, player.last_action, reward, self.current_state)
 
     def process_events(self):
         """ Process all of the events. Return a "False" if we need
@@ -349,27 +136,33 @@ class Game(object):
                 return False
         return True
 
+    def get_data(self):
+        if config.use_grid:
+            return self.get_grid()
+        else:
+            return self.get_high_level()
+
     def get_grid(self):
-        width = normalize_coordinate(GAME_WIDTH)
-        height = normalize_coordinate(GAME_HEIGHT)
-        offset = wall_width + wall_offset
-        data = np.zeros((EXTRA_LAYERS+self.total_players, width, height))
+        width = config.normalize_coordinate(config.GAME_WIDTH)
+        height = config.normalize_coordinate(config.GAME_HEIGHT)
+        offset = config.wall_width + config.wall_offset
+        data = np.zeros((config.EXTRA_LAYERS+self.total_players, width, height))
         for player in self.players:
-            index = int(player.index-1)
-            x = normalize_coordinate(player.position.x - offset - player.radius)
-            y = normalize_coordinate(player.position.y - offset - player.radius)
+            index = int(player.index)
+            x = config.normalize_coordinate(player.position.x - offset - player.radius)
+            y = config.normalize_coordinate(player.position.y - offset - player.radius)
             data[index, x, y] = 1
             shootX = min(width-1, max(0, x + int(round(np.cos(player.angle)))))
             shootY = min(height-1, max(0, y + int(round(np.sin(player.angle)))))
             data[index, shootX, shootY] = 0.5
             for bullet in self.bullets:
-                x = normalize_coordinate(bullet.position.x - offset)
-                y = normalize_coordinate(bullet.position.y - offset)
+                x = config.normalize_coordinate(bullet.position.x - offset)
+                y = config.normalize_coordinate(bullet.position.y - offset)
                 data[self.total_players, x, y] = 1
         return data.reshape((1, -1))
 
-    def get_data(self):
-        data = np.zeros(self.total_players * DATA_PER_PLAYER)
+    def get_high_level(self):
+        data = np.zeros(self.total_players * config.DATA_PER_PLAYER)
         i = 0
         for player in self.players:
             for other in self.players:
@@ -386,24 +179,18 @@ class Game(object):
                 line = Line(bullet, player)
                 if line.destination_in_front() and line.distance_from_line() <= player.radius:
                     data[i + 3] = 1
-            i += DATA_PER_PLAYER
+            i += config.DATA_PER_PLAYER
         return data.reshape((1, -1))
 
-    def display_frame(self, screen, input_data, epoch, q0, q1):
+    def display_frame(self, screen, epoch):
         """ Display everything to the screen for the game. """
         screen.fill(pygame.color.THECOLORS["black"])
         font = pygame.font.SysFont("Arial", 16)
         draw_options = pymunk.pygame_util.DrawOptions(screen)
 
-        # if self.game_over:
-        #     text = font.render("Game Over, click to restart", True, THECOLORS["red"])
-        #     center_x = (SCREEN_WIDTH // 2) - (text.get_width() // 2)
-        #     center_y = (SCREEN_HEIGHT // 2) - (text.get_height() // 2)
-        #     screen.blit(text, [center_x, center_y])
-
         if not self.game_over:
             removeLines = []
-            if DEBUG:
+            if config.debug:
                 for player in self.players:
                     for other in self.players:
                         if player.index is not other.index:
@@ -433,132 +220,12 @@ class Game(object):
                     round(player.position.x)) + ', ' + str(round(player.position.y)) + '); action= ' + str(player.last_action)+ '; '
                 i += 1
             screen.blit(font.render("Scores= " + scores + " Epoch = " + str(epoch), 1, THECOLORS["white"]), (0, 0))
-            screen.blit(font.render("Q1=" + str(q0), 1, THECOLORS["darkgrey"]), (5, SCREEN_HEIGHT - 65))
-            screen.blit(font.render("Q2=" + str(q1), 1, THECOLORS["darkgrey"]), (5, SCREEN_HEIGHT - 50))
-            screen.blit(font.render("Data=" + str(input_data), 1, THECOLORS["darkgrey"]), (5, SCREEN_HEIGHT - 35))
-            screen.blit(font.render("Press ESC or Q to quit", 1, THECOLORS["darkgrey"]), (5, SCREEN_HEIGHT - 20))
+            screen.blit(font.render("Press ESC or Q to quit", 1, THECOLORS["darkgrey"]), (5, config.SCREEN_HEIGHT - 20))
 
         pygame.display.flip()
 
     def update_physics(self, fps):
+        self.before_state = self.current_state
         dt = 1. / fps
         self.space.step(dt)
-
-
-def main():
-    ### PyGame init
-    pygame.init()
-    size = [SCREEN_WIDTH, SCREEN_HEIGHT]
-    screen = pygame.display.set_mode(size)
-
-    if len(players) < total_players:
-        sys.exit("Not enough player information was provided, " + str(total_players) + " players are needed.")
-
-    # Create model learning
-    width = normalize_coordinate(GAME_WIDTH)
-    height = normalize_coordinate(GAME_HEIGHT)
-    agents = []
-    for x in range(total_players):
-        name = "model_player_" + str(x) + ".h5"
-        input_size = ((EXTRA_LAYERS+total_players) * width * height) if use_grid else (DATA_PER_PLAYER * total_players)
-        if players[x]["feedforward"]:
-            agent = agentFF.SelfLearningAgent(input_size, hidden_size=players[x]["hidden_size"])
-        else:
-            agent = agentLSTM.SelfLearningAgent(input_size, hidden_size=players[x]["hidden_size"])
-        if os.path.isfile(name):
-            print("Model is loaded for agent" + str(x))
-            agent.model.load_weights(name)
-        agents.append(agent)
-
-    rewards = np.zeros(epochs * game_length)
-    players_won = np.zeros(total_players)
-    player_won_history = np.zeros((total_players, epochs))
-
-    for epoch in range(epochs):
-        print("Running epoch " + str(epoch) + "...")
-        # Main game loop
-        game = Game(total_players)
-        for agent in agents:
-            agent.memory.memory = list()
-        for x in range(game_length):
-            # Update object positions, check for collisions
-            game.run_logic()
-            if not game.process_events():
-                break
-
-            # Update players based on model
-            before_data = game.get_grid() if use_grid else game.get_data()
-            i = 0
-            for player in game.players:
-                if DEBUG and player.index is not i + 1:
-                    print("Incorrect agent loaded for player!!!!")
-                epsilon = 1 if players[i]["random"] else .1
-                action = agents[i].predict_action(before_data, epsilon)
-                maybe_bullet = player.act(action)
-                if maybe_bullet is not False:
-                    game.bullets.append(maybe_bullet)
-                i += 1
-
-            # Draw the current frame
-            if display_frame:
-                game.display_frame(screen, game.get_data(), epoch, agents[0].model.predict(before_data)[0], [])
-
-            # Update frame and physics
-            game.update_physics(fps)
-
-            after_data = game.get_grid() if use_grid else game.get_data()
-            i = 0
-            for player in game.players:
-                reward = player.get_reward()
-                loss = agents[i].get_new_state(before_data, player.last_action, reward, after_data)
-                rewards[(epoch * game_length) + x] = loss
-                i += 1
-        else:
-            best_player = None
-            best_score = 0
-            for player in game.players:
-                if player.score > best_score:
-                    best_score = player.score
-                    best_player = player.index
-            if best_player is not None:
-                players_won[best_player - 1] += 1
-                print("Player " + str(best_player) + " won epoch " + str(epoch))
-            for player in game.players:
-                player_won_history[player.index - 1][epoch] = players_won[player.index - 1]
-            continue
-        break
-
-    print("Total wins per player:")
-    print(players_won)
-    # for i in range(total_players):
-    #     print("Player " + str(i + 1) + "win history: ")
-    #     print(player_won_history[i])
-
-    x = range(0, epochs * game_length)
-    plt.plot(x, rewards)
-    # axes = plt.gca()
-    # axes.set_ylim([0, grid_size*3])
-    plt.show()
-
-    # Save results to excel file.
-    df = DataFrame(data=player_won_history)
-    df = df.T
-    i = 1
-    excel_name = 'game_results'
-    while os.path.isfile(excel_name + str(i) + '.xlsx'):
-        i += 1
-    df.to_excel(excel_name + str(i) + '.xlsx', index=False)
-
-    # Save trained model weights and architecture, this will be used by the visualization code
-    i = 0
-    for agent in agents:
-        name = "model_player_" + str(i)
-        agent.model.save_weights(name + ".h5", overwrite=True)
-        i += 1
-
-    # Close window and exit
-    pygame.quit()
-
-
-if __name__ == '__main__':
-    sys.exit(main())
+        self.current_state = self.get_data()
