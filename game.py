@@ -14,12 +14,14 @@ class Game(object):
         reset the game we'd just need to create a new instance of this
         class. """
 
-    def __init__(self, agents):
+    def __init__(self, agents, epoch):
         """ Constructor. Create all our attributes and initialize
         the game. """
 
         self.agents = agents
         self.total_players = len(agents)
+
+        self.epoch = epoch
 
         self.space = pymunk.Space()
         self.game_over = False
@@ -113,6 +115,20 @@ class Game(object):
         k = self.space.add_collision_handler(config.collision_types["player"], config.collision_types["player"])
         k.pre_solve = process_players_hit
 
+    def run(self, screen):
+        # Update player models
+        self.update_models()
+
+        # Draw the current frame
+        if config.display_frame:
+            self.display_frame(screen)
+
+        # Update frame and physics
+        self.update_physics(config.fps)
+
+        # Train models on updated data
+        self.train_models()
+
     def update_models(self):
         for player in self.players:
             epsilon = 1 if player.random else .1
@@ -141,6 +157,15 @@ class Game(object):
             return self.get_grid()
         else:
             return self.get_high_level()
+
+    @staticmethod
+    def get_data_size():
+        if config.use_grid:
+            width = config.normalize_coordinate(config.GAME_WIDTH)
+            height = config.normalize_coordinate(config.GAME_HEIGHT)
+            return (config.EXTRA_LAYERS + config.total_players) * width * height
+        else:
+            return config.DATA_PER_PLAYER * config.total_players
 
     def get_grid(self):
         width = config.normalize_coordinate(config.GAME_WIDTH)
@@ -182,7 +207,7 @@ class Game(object):
             i += config.DATA_PER_PLAYER
         return data.reshape((1, -1))
 
-    def display_frame(self, screen, epoch):
+    def display_frame(self, screen):
         """ Display everything to the screen for the game. """
         screen.fill(pygame.color.THECOLORS["black"])
         font = pygame.font.SysFont("Arial", 16)
@@ -219,7 +244,7 @@ class Game(object):
                 scores += 'Player ' + str(i) + ': ' + str(player.score) + ' ( ' + str(
                     round(player.position.x)) + ', ' + str(round(player.position.y)) + '); action= ' + str(player.last_action)+ '; '
                 i += 1
-            screen.blit(font.render("Scores= " + scores + " Epoch = " + str(epoch), 1, THECOLORS["white"]), (0, 0))
+            screen.blit(font.render("Scores= " + scores + " Epoch = " + str(self.epoch), 1, THECOLORS["white"]), (0, 0))
             screen.blit(font.render("Press ESC or Q to quit", 1, THECOLORS["darkgrey"]), (5, config.SCREEN_HEIGHT - 20))
 
         pygame.display.flip()
@@ -229,3 +254,14 @@ class Game(object):
         dt = 1. / fps
         self.space.step(dt)
         self.current_state = self.get_data()
+
+    def best_player(self):
+        best_player = None
+        best_score = 0
+        for player in self.players:
+            if player.score > best_score:
+                best_score = player.score
+                best_player = player.index
+
+        return best_player
+

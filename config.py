@@ -9,7 +9,7 @@ display_frame = True
 use_grid = False
 players = [
     {
-        "feedforward": True,
+        "feedforward": False,
         "random": False,
         "hidden_size": 50,
     },

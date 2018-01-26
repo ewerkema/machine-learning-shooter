@@ -1,17 +1,22 @@
 import numpy as np
-import matplotlib.pyplot as plt
 from keras.models import Sequential
 from keras.layers.core import Dense
 from keras.layers import LSTM
 from keras.optimizers import sgd
+import config
+from agent import AbstractAgent, AbstractMemory
 
 TIMESTEPS = 20
 
-class Memory(object):
+
+class Memory(AbstractMemory):
     def __init__(self, max_memory=TIMESTEPS*3, discount=.99):
         self.max_memory = max_memory
         self.memory = list()
         self.discount = discount
+
+    def clear(self):
+        self.memory = list()
 
     def remember(self, states):
         # memory[i] = [[state_t, action_t, reward_t, state_t+1], game_over?]
@@ -50,13 +55,13 @@ class Memory(object):
         return inputs, targets
 
 
-class SelfLearningAgent(object):
+class Agent(AbstractAgent):
 
-    def __init__(self, input_size, hidden_size=150, num_actions=5):
+    def __init__(self, input_size, hidden_size=150):
         # parameters
         self.input_size = input_size
         self.hidden_size = hidden_size
-        self.num_actions = num_actions
+        self.num_actions = len(config.actions)
         self._init_model()
 
     def _init_model(self):
