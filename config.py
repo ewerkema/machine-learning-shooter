@@ -1,6 +1,6 @@
-""" GAME OPTIONS """
 import numpy as np
 
+""" GAME OPTIONS """
 total_players = 2
 epochs = 2000
 fps = 25
@@ -9,7 +9,7 @@ display_frame = True
 use_grid = False
 players = [
     {
-        "feedforward": False,
+        "feedforward": True,
         "random": False,
         "hidden_size": 50,
     },
@@ -22,7 +22,7 @@ players = [
 """ END GAME OPTIONS"""
 
 SCREEN_WIDTH, SCREEN_HEIGHT = 1000, 800
-wall_offset = 60
+wall_offset = 100
 wall_width = 20
 GAME_WIDTH = SCREEN_WIDTH - (wall_offset + wall_width) * 2
 GAME_HEIGHT = SCREEN_HEIGHT - (wall_offset + wall_width) * 2

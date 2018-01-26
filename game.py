@@ -140,7 +140,7 @@ class Game(object):
     def train_models(self):
         for player in self.players:
             reward = player.get_reward()
-            loss = self.agents[player.index].get_new_state(self.before_state, player.last_action, reward, self.current_state)
+            self.agents[player.index].get_new_state(self.before_state, player.last_action, reward, self.current_state)
 
     def process_events(self):
         """ Process all of the events. Return a "False" if we need
@@ -239,12 +239,16 @@ class Game(object):
 
             # Info and flip screen
             scores = ''
-            i = 1
             for player in self.players:
-                scores += 'Player ' + str(i) + ': ' + str(player.score) + ' ( ' + str(
-                    round(player.position.x)) + ', ' + str(round(player.position.y)) + '); action= ' + str(player.last_action)+ '; '
-                i += 1
-            screen.blit(font.render("Scores= " + scores + " Epoch = " + str(self.epoch), 1, THECOLORS["white"]), (0, 0))
+                q_values = self.agents[player.index].get_q_values()
+                scores += 'Player ' + str(player.index) + ': ' + str(player.score) + ' ( ' + str(round(player.position.x)) + ', ' + str(round(player.position.y)) + '); action= ' + str(player.last_action) + '; '
+                screen.blit(font.render("Q" + str(player.index) + "= " + str(q_values), 1, THECOLORS["darkgrey"]),
+                            (5, config.SCREEN_HEIGHT - 35 - player.index*15))
+
+            if not config.use_grid:
+                screen.blit(font.render("High level= " + str(self.get_high_level()), 1, THECOLORS["white"]), (5, 15))
+
+            screen.blit(font.render("Scores= " + scores + " Epoch = " + str(self.epoch), 1, THECOLORS["white"]), (5, 0))
             screen.blit(font.render("Press ESC or Q to quit", 1, THECOLORS["darkgrey"]), (5, config.SCREEN_HEIGHT - 20))
 
         pygame.display.flip()

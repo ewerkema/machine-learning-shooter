@@ -1,3 +1,8 @@
+import numpy as np
+
+import config
+
+
 class AbstractMemory(object):
     """Q Learning memory class for remembering states
     of the implemented agent"""
@@ -14,6 +19,10 @@ class AbstractMemory(object):
 class AbstractAgent(object):
     """A self-learning agent that is implemented by a certain
     keras model. This class represents an interface for an agent"""
+    def __init__(self):
+        self.num_actions = len(config.actions)
+        self.q = np.zeros(self.num_actions)
+
     def _init_model(self):
         raise NotImplementedError("Class %s doesn't implement _init_model()" % self.__class__.__name__)
 
@@ -23,3 +32,6 @@ class AbstractAgent(object):
     def get_new_state(self, input_data, action, reward, input_datap1):
         raise NotImplementedError("Class %s doesn't implement get_new_state(input_data, action, reward, "
                                   "input_datap1):" % self.__class__.__name__)
+
+    def get_q_values(self):
+        return self.q

@@ -43,14 +43,12 @@ class Memory(AbstractMemory):
 class Agent(AbstractAgent):
 
 	def __init__(self, input_size, hidden_size=150):
-		# parameters
+		super().__init__()
 		self.input_size = input_size
 		self.hidden_size = hidden_size
-		self.num_actions = len(config.actions)
 		self._init_model()
 
 	def _init_model(self):
-		# init model
 		self.model = Sequential()
 		self.model.add(Dense(self.hidden_size, input_shape=(self.input_size, ), activation='sigmoid'))
 		self.model.add(Dense(self.num_actions, activation='linear'))
@@ -61,8 +59,8 @@ class Agent(AbstractAgent):
 		if np.random.rand() <= epsilon:
 			action = np.random.randint(0, self.num_actions, size=1)[0]
 		else:
-			q = self.model.predict(input_data, batch_size=self.input_size)[0]
-			action = np.argmax(q)
+			self.q = self.model.predict(input_data, batch_size=self.input_size)[0]
+			action = np.argmax(self.q)
 		return action
 
 	def get_new_state(self, input_data, action, reward, input_datap1):

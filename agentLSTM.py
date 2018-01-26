@@ -58,14 +58,12 @@ class Memory(AbstractMemory):
 class Agent(AbstractAgent):
 
     def __init__(self, input_size, hidden_size=150):
-        # parameters
+        super().__init__()
         self.input_size = input_size
         self.hidden_size = hidden_size
-        self.num_actions = len(config.actions)
         self._init_model()
 
     def _init_model(self):
-        # init model
         self.model = Sequential()
         self.model.add(LSTM(self.hidden_size, return_sequences=True, input_shape=(TIMESTEPS, self.input_size)))
         self.model.add(LSTM(self.hidden_size, return_sequences=False))
@@ -78,13 +76,8 @@ class Agent(AbstractAgent):
             action = np.random.randint(0, self.num_actions, size=1)[0]
         else:
             input_data = self.memory.get_time_seq(0)
-            q = self.model.predict(input_data, batch_size=self.input_size)[0]
-            # Probability for Q values
-            actions = [0, 1, 2, 3, 4]
-            # probs = np.add(q, abs(np.min(q)))
-            # probs = np.divide(probs,np.sum(probs))
-            # action = np.random.choice(actions, p=probs)
-            action = np.argmax(q)
+            self.q = self.model.predict(input_data, batch_size=self.input_size)[0]
+            action = np.argmax(self.q)
         return action
 
     def get_new_state(self, input_data, action, reward, input_datap1):
@@ -95,3 +88,4 @@ class Agent(AbstractAgent):
             loss = self.model.train_on_batch(inputs, targets)
 
         return loss
+
