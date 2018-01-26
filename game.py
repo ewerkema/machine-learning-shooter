@@ -24,7 +24,6 @@ class Game(object):
         self.epoch = epoch
 
         self.space = pymunk.Space()
-        self.game_over = False
 
         # Create bullet lists
         self.bullets = []
@@ -209,29 +208,31 @@ class Game(object):
 
     def display_frame(self, screen):
         """ Display everything to the screen for the game. """
+        if not screen:
+            pass
+
         screen.fill(pygame.color.THECOLORS["black"])
         font = pygame.font.SysFont("Arial", 16)
         draw_options = pymunk.pygame_util.DrawOptions(screen)
 
-        if not self.game_over:
-            removeLines = []
-            if config.debug:
-                for player in self.players:
-                    for other in self.players:
-                        if player.index is not other.index:
-                            AB = other.position - player.position
-                            normA = (np.cos(player.angle), np.sin(player.angle))
-                            in_front = np.dot(AB, normA) > 0
-                            if in_front:
-                                a = np.tan(player.angle)
-                                b = -1
-                                c = player.position.y - a * player.position.x
-                                angle = 180 * (player.angle % (2 * np.pi)) / np.pi
-                                x = 2000 if angle < 90 or angle >= 270 else -2000
-                                vision_position = (x, a * x + c)
-                                line = pymunk.Segment(self.space.static_body, player.position, vision_position, 1),
-                                self.space.add(line)
-                                removeLines.append(line)
+        removeLines = []
+        if config.debug:
+            for player in self.players:
+                for other in self.players:
+                    if player.index is not other.index:
+                        AB = other.position - player.position
+                        normA = (np.cos(player.angle), np.sin(player.angle))
+                        in_front = np.dot(AB, normA) > 0
+                        if in_front:
+                            a = np.tan(player.angle)
+                            b = -1
+                            c = player.position.y - a * player.position.x
+                            angle = 180 * (player.angle % (2 * np.pi)) / np.pi
+                            x = 2000 if angle < 90 or angle >= 270 else -2000
+                            vision_position = (x, a * x + c)
+                            line = pymunk.Segment(self.space.static_body, player.position, vision_position, 1),
+                            self.space.add(line)
+                            removeLines.append(line)
             # Draw stuff
             self.space.debug_draw(draw_options)
             for line in removeLines:

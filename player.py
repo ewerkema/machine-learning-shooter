@@ -43,6 +43,12 @@ class Player(pymunk.Body):
     def get_reward(self):
         return self.score - self.old_score
 
+    def get_accuracy(self):
+        if self.shot_bullets == 0:
+            return 0
+
+        return self.hit_bullets / self.shot_bullets * 100
+
     def hurt(self):
         self.score -= 1
 

@@ -13,7 +13,7 @@ class World(object):
     def __init__(self):
         pygame.init()
         self.size = [config.SCREEN_WIDTH, config.SCREEN_HEIGHT]
-        self.screen = pygame.display.set_mode(self.size)
+        self.screen = pygame.display.set_mode(self.size) if config.display_frame else False
 
         if len(config.players) < config.total_players:
             sys.exit(
@@ -23,6 +23,7 @@ class World(object):
         self.agents = []
         self.players_won = np.zeros(config.total_players)
         self.player_won_history = np.zeros((config.total_players, config.epochs))
+        self.player_accuracy_history = np.zeros((config.total_players, config.epochs))
 
         self.init_models()
 
@@ -57,12 +58,13 @@ class World(object):
             print("Player " + str(best_player) + " won epoch " + str(epoch))
         for player in game.players:
             self.player_won_history[player.index][epoch] = self.players_won[player.index]
+            self.player_accuracy_history[player.index][epoch] = player.get_accuracy()
 
         return True
 
     def save_results_to_excel(self):
         # Save results to excel file.
-        df = DataFrame(data=self.player_won_history)
+        df = DataFrame(data=np.concatenate((self.player_won_history, self.player_accuracy_history)))
         df = df.T
         i = 1
         excel_name = 'game_results'

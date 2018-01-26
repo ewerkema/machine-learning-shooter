@@ -2,7 +2,7 @@ import numpy as np
 
 """ GAME OPTIONS """
 total_players = 2
-epochs = 2000
+epochs = 5
 fps = 25
 game_length = fps * 20
 display_frame = True

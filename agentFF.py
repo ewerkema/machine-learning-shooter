@@ -2,7 +2,6 @@ import numpy as np
 from keras.models import Sequential
 from keras.layers.core import Dense
 from keras.optimizers import sgd
-import config
 from agent import AbstractAgent, AbstractMemory
 
 
